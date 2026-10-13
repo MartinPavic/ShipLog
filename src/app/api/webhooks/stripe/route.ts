@@ -1,52 +1,36 @@
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import type Stripe from "stripe";
+import { claimStripeEvent, processStripeEvent, releaseStripeEvent } from "@/lib/billing";
 import { stripe } from "@/lib/stripe";
-import { clerkClient } from "@clerk/nextjs/server";
-import Stripe from "stripe";
 
 export async function POST(req: Request) {
   const body = await req.text();
-  const headerPayload = await headers();
-  const signature = headerPayload.get("stripe-signature");
+  const signature = req.headers.get("stripe-signature");
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!signature) {
-    return NextResponse.json({ error: "No signature" }, { status: 400 });
+  if (!signature || !secret) {
+    return NextResponse.json({ error: "Missing signature" }, { status: 400 });
   }
 
   let event: Stripe.Event;
-
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    );
-  } catch (err: any) {
-    console.error("Webhook signature verification failed:", err.message);
+    event = stripe.webhooks.constructEvent(body, signature, secret);
+  } catch (err) {
+    console.error("Webhook signature verification failed:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  const client = await clerkClient();
-
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.metadata?.userId;
-
-    if (userId) {
-      await client.users.updateUserMetadata(userId, {
-        privateMetadata: {
-          stripeCustomerId: session.customer as string,
-          subscriptionStatus: "active",
-          plan: "pro",
-        },
-      });
-    }
+  if (!(await claimStripeEvent(event.id))) {
+    return NextResponse.json({ received: true, duplicate: true });
   }
 
-  if (event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as Stripe.Subscription;
-    // You can look up the user by stripeCustomerId if needed
-    // For v1 we keep it simple
+  try {
+    await processStripeEvent(event);
+  } catch (err) {
+    // Free the claim so Stripe's retry gets processed.
+    await releaseStripeEvent(event.id);
+    console.error(`Webhook ${event.type} failed:`, err);
+    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

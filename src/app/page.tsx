@@ -20,7 +20,7 @@ export default function Home() {
               <Link href="/dashboard">
                 <Button variant="ghost" size="sm">Dashboard</Button>
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </Show>
           </div>
         </div>
@@ -87,9 +87,9 @@ export default function Home() {
             Free to try. Pro unlocks unlimited generations and history.
           </p>
 
-          <div className="inline-flex flex-col sm:flex-row gap-6 text-left justify-center">
+          <div className="inline-flex flex-col sm:flex-row gap-6 text-left justify-center items-stretch">
             {/* Free plan */}
-            <div className="border rounded-lg p-6 w-64">
+            <div className="border rounded-lg p-6 w-64 flex flex-col">
               <div className="font-semibold mb-1">Free</div>
               <div className="text-2xl font-bold mb-3">€0</div>
               <ul className="text-sm text-muted-foreground space-y-1 mb-6">
@@ -98,13 +98,13 @@ export default function Home() {
               </ul>
               <Show when="signed-out">
                 <SignInButton mode="modal">
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full mt-auto">
                     Get started
                   </Button>
                 </SignInButton>
               </Show>
               <Show when="signed-in">
-                <Link href="/dashboard">
+                <Link href="/dashboard" className="mt-auto">
                   <Button variant="outline" className="w-full">
                     Go to Dashboard
                   </Button>
@@ -113,7 +113,7 @@ export default function Home() {
             </div>
 
             {/* Pro plan */}
-            <div className="border rounded-lg p-6 w-64 border-primary relative">
+            <div className="border rounded-lg p-6 w-64 border-primary relative flex flex-col">
               <div className="font-semibold mb-1">Pro</div>
               <div className="text-2xl font-bold mb-3">
                 €9<span className="text-sm font-normal">/mo</span>
@@ -126,12 +126,14 @@ export default function Home() {
 
               <Show when="signed-out">
                 <SignInButton mode="modal">
-                  <Button className="w-full">Upgrade to Pro</Button>
+                  <Button className="w-full mt-auto">Upgrade to Pro</Button>
                 </SignInButton>
               </Show>
 
               <Show when="signed-in">
-                <UpgradeButton />
+                <div className="mt-auto">
+                  <UpgradeButton />
+                </div>
               </Show>
             </div>
           </div>
