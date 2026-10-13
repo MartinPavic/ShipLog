@@ -1,32 +1,53 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { stripe, STRIPE_PRICE_ID } from "@/lib/stripe";
+import { getDb } from "@/db";
+import { billingAccounts } from "@/db/schema";
+import { ApiError, handle } from "@/lib/api";
+import { requireAdmin } from "@/lib/owner";
+import { planFromStatus } from "@/lib/plans";
+import { STRIPE_PRICE_ID, stripe } from "@/lib/stripe";
 
-export async function POST() {
-  const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+export const POST = handle(async () => {
+  const owner = await requireAdmin();
+  const db = getDb();
+
+  const [account] = await db
+    .select()
+    .from(billingAccounts)
+    .where(eq(billingAccounts.ownerId, owner.ownerId))
+    .limit(1);
+
+  if (account && planFromStatus(account.status) === "pro") {
+    throw new ApiError(409, "You already have an active subscription.", "ALREADY_SUBSCRIBED");
   }
 
-  const user = await currentUser();
-  const email = user?.emailAddresses[0]?.emailAddress;
+  let customerId = account?.stripeCustomerId;
+  if (!customerId) {
+    const user = await currentUser();
+    // Idempotency key stops concurrent checkouts from creating duplicate customers.
+    const customer = await stripe.customers.create(
+      { email: user?.emailAddresses[0]?.emailAddress, metadata: { ownerId: owner.ownerId } },
+      { idempotencyKey: `customer-${owner.ownerId}` }
+    );
+    customerId = customer.id;
+    await db
+      .insert(billingAccounts)
+      .values({ ownerId: owner.ownerId, stripeCustomerId: customerId })
+      .onConflictDoUpdate({ target: billingAccounts.ownerId, set: { stripeCustomerId: customerId } });
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
-    payment_method_types: ["card"],
-    line_items: [
-      {
-        price: STRIPE_PRICE_ID,
-        quantity: 1,
-      },
-    ],
-    success_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard?success=true`,
-    cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard?canceled=true`,
-    customer_email: email,
-    metadata: {
-      userId,
-    },
+    customer: customerId,
+    line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+    success_url: `${appUrl()}/dashboard?success=true`,
+    cancel_url: `${appUrl()}/dashboard?canceled=true`,
+    metadata: { ownerId: owner.ownerId },
+    subscription_data: { metadata: { ownerId: owner.ownerId } },
   });
 
   return NextResponse.json({ url: session.url });
-}
+});

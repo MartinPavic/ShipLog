@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { ApiClientError, apiRequest } from "@/lib/client-api";
 import { UpgradeButton } from "./upgrade-button";
 
 interface ShipLog {
   id: string;
   createdAt: string;
   content: string;
-  period: string;
+  title: string;
 }
 
 export function ShipLogClient({ initialLogs }: { initialLogs: ShipLog[] }) {
@@ -22,32 +23,26 @@ export function ShipLogClient({ initialLogs }: { initialLogs: ShipLog[] }) {
   const [result, setResult] = useState("");
   const [logs, setLogs] = useState<ShipLog[]>(initialLogs);
   const [error, setError] = useState("");
+  const [limitReached, setLimitReached] = useState(false);
 
   async function generate() {
     setLoading(true);
     setError("");
+    setLimitReached(false);
     setResult("");
 
     try {
-      const res = await fetch("/api/ship-log/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: repo.trim() || null, days }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.code === "LIMIT_REACHED") {
-          throw new Error(data.error); // will show the upgrade message
-        }
-        throw new Error(data.error || "Generation failed");
-      }
+      const data = await apiRequest<{ content: string; log: ShipLog }>(
+        "/api/ship-log/generate",
+        "POST",
+        { repo: repo.trim() || null, days }
+      );
 
       setResult(data.content);
       setLogs((prev) => [data.log, ...prev].slice(0, 10)); // keep last 10
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLimitReached(err instanceof ApiClientError && err.code === "LIMIT_REACHED");
     } finally {
       setLoading(false);
     }
@@ -80,7 +75,7 @@ export function ShipLogClient({ initialLogs }: { initialLogs: ShipLog[] }) {
               id="days"
               type="number"
               min={1}
-              max={30}
+              max={90}
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
             />
@@ -93,7 +88,7 @@ export function ShipLogClient({ initialLogs }: { initialLogs: ShipLog[] }) {
           {error && (
             <div className="space-y-3">
               <p className="text-sm text-red-500">{error}</p>
-              {error.includes("Upgrade to Pro") && <UpgradeButton />}
+              {limitReached && <UpgradeButton />}
             </div>
           )}
         </CardContent>
@@ -125,7 +120,7 @@ export function ShipLogClient({ initialLogs }: { initialLogs: ShipLog[] }) {
               <Card key={log.id}>
                 <CardHeader className="py-3">
                   <div className="flex justify-between text-sm">
-                    <span className="font-medium">{log.period}</span>
+                    <span className="font-medium">{log.title}</span>
                     <span className="text-muted-foreground">
                       {new Date(log.createdAt).toLocaleString()}
                     </span>

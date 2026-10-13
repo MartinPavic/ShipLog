@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -12,115 +13,226 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiRequest } from "@/lib/client-api";
+import { AI_PROVIDERS, DEFAULT_MODELS, PROVIDER_LABELS, type AiProvider } from "@/lib/ai/models";
 
-interface SettingsFormProps {
-  initialGithubToken: string;
-  initialAiApiKey: string;
-  initialAiProvider: string;
-}
-
-export function SettingsForm({
-  initialGithubToken,
-  initialAiApiKey,
-  initialAiProvider,
-}: SettingsFormProps) {
+function useAction() {
   const router = useRouter();
-  const [githubToken, setGithubToken] = useState(initialGithubToken);
-  const [aiApiKey, setAiApiKey] = useState(initialAiApiKey);
-  const [aiProvider, setAiProvider] = useState(initialAiProvider);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function run(fn: () => Promise<string>) {
     setLoading(true);
-    setMessage("");
-
+    setMessage(null);
     try {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ githubToken, aiApiKey, aiProvider }),
-      });
-
-      if (!res.ok) throw new Error("Failed to save");
-
-      setMessage("Settings saved successfully");
+      setMessage({ text: await fn(), error: false });
       router.refresh();
     } catch (err) {
-      setMessage("Something went wrong. Please try again.");
+      setMessage({ text: err instanceof Error ? err.message : "Something went wrong", error: true });
     } finally {
       setLoading(false);
     }
   }
 
+  return { loading, message, run };
+}
+
+function Feedback({ message }: { message: { text: string; error: boolean } | null }) {
+  if (!message) return null;
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>GitHub</CardTitle>
-          <CardDescription>
-            Create a Personal Access Token with <code>repo</code> scope (or public_repo for public repos only).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <p className={`text-sm ${message.error ? "text-red-500" : "text-muted-foreground"}`}>
+      {message.text}
+    </p>
+  );
+}
+
+export function GithubCard({ login }: { login: string | null }) {
+  const [token, setToken] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const { loading, message, run } = useAction();
+  const showInput = !login || replacing;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GitHub</CardTitle>
+        <CardDescription>
+          Create a Personal Access Token with <code>repo</code> scope (or <code>public_repo</code> for
+          public repos only).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {login && <p className="text-sm">Connected as <strong>{login}</strong></p>}
+        {showInput && (
           <div className="space-y-2">
             <Label htmlFor="githubToken">GitHub Personal Access Token</Label>
             <Input
               id="githubToken"
               type="password"
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
+              autoComplete="off"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
               placeholder="ghp_..."
             />
           </div>
-        </CardContent>
-      </Card>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {showInput ? (
+            <Button
+              disabled={loading || token.trim().length < 10}
+              onClick={() =>
+                run(async () => {
+                  const { login } = await apiRequest<{ login: string }>("/api/settings/github", "PUT", { token });
+                  setToken("");
+                  setReplacing(false);
+                  return `Connected as ${login}`;
+                })
+              }
+            >
+              {loading ? "Verifying..." : login ? "Save new token" : "Connect GitHub"}
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => setReplacing(true)}>
+              Replace token
+            </Button>
+          )}
+          {login && (
+            <Button
+              variant="ghost"
+              disabled={loading}
+              onClick={() =>
+                run(async () => {
+                  await apiRequest("/api/settings/github", "DELETE");
+                  return "GitHub disconnected";
+                })
+              }
+            >
+              Disconnect
+            </Button>
+          )}
+          <Feedback message={message} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>AI Provider</CardTitle>
-          <CardDescription>
-            Your key stays private and is only used to generate ship logs.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Provider</Label>
-            <Select value={aiProvider} onValueChange={setAiProvider}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-                <SelectItem value="grok">Grok (xAI)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+type AiStatus = { provider: AiProvider; last4: string; model: string | null } | null;
 
-          <div className="space-y-2">
-            <Label htmlFor="aiApiKey">API Key</Label>
+export function AiCard({ ai, canManage }: { ai: AiStatus; canManage: boolean }) {
+  const [provider, setProvider] = useState<AiProvider>(ai?.provider ?? "openai");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState(ai?.model ?? "");
+  const [replacing, setReplacing] = useState(false);
+  const { loading, message, run } = useAction();
+
+  const keyStored = Boolean(ai) && provider === ai?.provider;
+  const showKeyInput = !keyStored || replacing;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>AI Provider</CardTitle>
+        <CardDescription>
+          Your key is encrypted at rest and only used to generate ship logs.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select
+            value={provider}
+            onValueChange={(v) => v && setProvider(v as AiProvider)}
+            disabled={!canManage}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AI_PROVIDERS.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {PROVIDER_LABELS[p]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="aiApiKey">API Key</Label>
+          {showKeyInput ? (
             <Input
               id="aiApiKey"
               type="password"
-              value={aiApiKey}
-              onChange={(e) => setAiApiKey(e.target.value)}
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-..."
+              disabled={!canManage}
             />
-          </div>
-        </CardContent>
-      </Card>
+          ) : (
+            <div className="flex items-center gap-3">
+              <Input id="aiApiKey" value={`••••••••${ai?.last4}`} readOnly disabled />
+              {canManage && (
+                <Button type="button" variant="outline" onClick={() => setReplacing(true)}>
+                  Replace
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
 
-      <div className="flex items-center gap-4">
-        <Button type="submit" disabled={loading}>
-          {loading ? "Saving..." : "Save settings"}
-        </Button>
-        {message && (
-          <p className="text-sm text-muted-foreground">{message}</p>
+        <div className="space-y-2">
+          <Label htmlFor="aiModel">Model (optional)</Label>
+          <Input
+            id="aiModel"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={DEFAULT_MODELS[provider]}
+            disabled={!canManage}
+          />
+        </div>
+
+        {canManage ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              disabled={loading || (showKeyInput && !apiKey.trim())}
+              onClick={() =>
+                run(async () => {
+                  await apiRequest("/api/settings/ai", "PUT", {
+                    provider,
+                    ...(apiKey.trim() ? { apiKey } : {}),
+                    ...(model.trim() ? { model } : {}),
+                  });
+                  setApiKey("");
+                  setReplacing(false);
+                  return "AI settings saved";
+                })
+              }
+            >
+              {loading ? "Saving..." : "Save"}
+            </Button>
+            {ai && (
+              <Button
+                variant="ghost"
+                disabled={loading}
+                onClick={() =>
+                  run(async () => {
+                    await apiRequest("/api/settings/ai", "DELETE");
+                    setModel("");
+                    return "API key removed";
+                  })
+                }
+              >
+                Remove key
+              </Button>
+            )}
+            <Feedback message={message} />
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Only organization admins can change AI credentials.</p>
         )}
-      </div>
-    </form>
+      </CardContent>
+    </Card>
   );
 }

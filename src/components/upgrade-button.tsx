@@ -2,28 +2,47 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/client-api";
 
-export function UpgradeButton() {
+function RedirectButton({
+  endpoint,
+  label,
+  variant,
+}: {
+  endpoint: string;
+  label: string;
+  variant?: "default" | "outline";
+}) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  async function handleUpgrade() {
+  async function go() {
     setLoading(true);
+    setError("");
     try {
-      const res = await fetch("/api/stripe/checkout", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
+      const { url } = await apiRequest<{ url: string | null }>(endpoint, "POST");
+      if (url) window.location.href = url;
+      else setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
     }
   }
 
   return (
-    <Button onClick={handleUpgrade} disabled={loading}>
-      {loading ? "Redirecting..." : "Upgrade to Pro — €9/mo"}
-    </Button>
+    <div className="space-y-2">
+      <Button onClick={go} disabled={loading} variant={variant}>
+        {loading ? "Redirecting..." : label}
+      </Button>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+    </div>
   );
+}
+
+export function UpgradeButton() {
+  return <RedirectButton endpoint="/api/stripe/checkout" label="Upgrade to Pro — €9/mo" />;
+}
+
+export function ManageBillingButton() {
+  return <RedirectButton endpoint="/api/stripe/portal" label="Manage billing" variant="outline" />;
 }

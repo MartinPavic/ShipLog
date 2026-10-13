@@ -33,7 +33,7 @@ export default async function DashboardLayout({
               </Link>
             </nav>
           </div>
-          <UserButton afterSignOutUrl="/" />
+          <UserButton />
         </div>
       </header>
       <main className="container mx-auto px-4 py-8">{children}</main>
