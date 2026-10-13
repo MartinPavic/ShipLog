@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,63 +46,46 @@ function Feedback({ message }: { message: { text: string; error: boolean } | nul
   );
 }
 
-export function GithubCard({ login }: { login: string | null }) {
-  const [token, setToken] = useState("");
-  const [replacing, setReplacing] = useState(false);
+const GITHUB_NOTICES: Record<string, { text: string; error: boolean }> = {
+  connected: { text: "GitHub connected.", error: false },
+  denied: { text: "GitHub access was denied.", error: true },
+  invalid_state: { text: "The GitHub sign-in expired. Please try again.", error: true },
+  error: { text: "Could not complete the GitHub connection. Please try again.", error: true },
+  not_configured: {
+    text: "GitHub OAuth is not configured on this server (GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET).",
+    error: true,
+  },
+};
+
+export function GithubCard({ login, notice }: { login: string | null; notice: string | null }) {
   const { loading, message, run } = useAction();
-  const showInput = !login || replacing;
+  const shown = message ?? (notice && Object.hasOwn(GITHUB_NOTICES, notice) ? GITHUB_NOTICES[notice] : null);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>GitHub</CardTitle>
         <CardDescription>
-          Create a Personal Access Token with <code>repo</code> scope (or <code>public_repo</code> for
-          public repos only).
+          ShipLog reads commits, pull requests, issues and releases from your repositories.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {login && <p className="text-sm">Connected as <strong>{login}</strong></p>}
-        {showInput && (
-          <div className="space-y-2">
-            <Label htmlFor="githubToken">GitHub Personal Access Token</Label>
-            <Input
-              id="githubToken"
-              type="password"
-              autoComplete="off"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="ghp_..."
-            />
-          </div>
+        {login && (
+          <p className="text-sm">
+            Connected as <strong>{login}</strong>
+          </p>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          {showInput ? (
-            <Button
-              disabled={loading || token.trim().length < 10}
-              onClick={() =>
-                run(async () => {
-                  const { login } = await apiRequest<{ login: string }>("/api/settings/github", "PUT", { token });
-                  setToken("");
-                  setReplacing(false);
-                  return `Connected as ${login}`;
-                })
-              }
-            >
-              {loading ? "Verifying..." : login ? "Save new token" : "Connect GitHub"}
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={() => setReplacing(true)}>
-              Replace token
-            </Button>
-          )}
+          <a href="/api/github/connect" className={buttonVariants({ variant: login ? "outline" : "default" })}>
+            {login ? "Reconnect" : "Connect GitHub"}
+          </a>
           {login && (
             <Button
               variant="ghost"
               disabled={loading}
               onClick={() =>
                 run(async () => {
-                  await apiRequest("/api/settings/github", "DELETE");
+                  await apiRequest("/api/github/disconnect", "DELETE");
                   return "GitHub disconnected";
                 })
               }
@@ -110,7 +93,7 @@ export function GithubCard({ login }: { login: string | null }) {
               Disconnect
             </Button>
           )}
-          <Feedback message={message} />
+          <Feedback message={shown} />
         </div>
       </CardContent>
     </Card>
