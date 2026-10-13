@@ -4,11 +4,11 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { billingAccounts } from "@/db/schema";
 import { ApiError, handle } from "@/lib/api";
+import { appUrl } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/owner";
 import { planFromStatus } from "@/lib/plans";
 import { STRIPE_PRICE_ID, stripe } from "@/lib/stripe";
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
 export const POST = handle(async () => {
   const owner = await requireAdmin();

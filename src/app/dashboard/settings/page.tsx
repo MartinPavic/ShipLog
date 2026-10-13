@@ -5,7 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getSetupStatus } from "@/lib/settings";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ github?: string }>;
+}) {
+  const { github: githubNotice } = await searchParams;
   const owner = await getOwner();
   const status = await getSetupStatus(owner);
   const canManage = isAdmin(owner);
@@ -19,7 +24,7 @@ export default async function SettingsPage() {
         </p>
       </div>
 
-      <GithubCard login={status.github?.login ?? null} />
+      <GithubCard login={status.github?.login ?? null} notice={githubNotice ?? null} />
       <AiCard ai={status.ai} canManage={canManage} />
 
       <Card>

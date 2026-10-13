@@ -4,7 +4,8 @@ import { shipLogs } from "@/db/schema";
 import { resolveAiAccess } from "@/lib/ai/access";
 import { complete } from "@/lib/ai/providers";
 import { ApiError, handle, parseBody } from "@/lib/api";
-import { fetchCommitLines, getGithubConnection } from "@/lib/github";
+import { fetchActivity, getGithubConnection, listRecentlyPushedRepos } from "@/lib/github";
+import { formatActivity, isActivityEmpty } from "@/lib/github-activity";
 import { getOwner } from "@/lib/owner";
 import { getOrCreateDefaultProject } from "@/lib/projects";
 import { releaseGeneration, reserveGeneration } from "@/lib/usage";
@@ -12,7 +13,7 @@ import { generateSchema } from "@/lib/validation";
 
 export const maxDuration = 90;
 
-const SYSTEM_PROMPT = `You are an expert engineering manager. Turn git commits into a clean, professional ship log / progress report.
+const SYSTEM_PROMPT = `You are an expert engineering manager. Turn GitHub activity (releases, merged pull requests, closed issues and commits) into a clean, professional ship log / progress report.
 
 Rules:
 - Group related work into 3-7 bullet points
@@ -37,9 +38,10 @@ export const POST = handle(async (req: Request) => {
     const periodEnd = new Date();
     const periodStart = new Date(periodEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
-    const commits = await fetchCommitLines(github.token, github.login, repo ?? null, periodStart);
-    if (!commits.trim()) {
-      throw new ApiError(400, "No commits found in the selected period.", "NO_ACTIVITY");
+    const repos = repo ? [{ fullName: repo }] : await listRecentlyPushedRepos(github.token, periodStart);
+    const activity = await fetchActivity(github.token, repos, periodStart, periodEnd);
+    if (isActivityEmpty(activity)) {
+      throw new ApiError(400, "No activity found in the selected period.", "NO_ACTIVITY");
     }
 
     const content = await complete({
@@ -47,7 +49,7 @@ export const POST = handle(async (req: Request) => {
       key: ai.key,
       model: ai.model,
       system: SYSTEM_PROMPT,
-      prompt: `Commits:\n${commits}`,
+      prompt: `GitHub activity:\n\n${formatActivity(activity)}`,
     });
 
     const project = await getOrCreateDefaultProject(owner);
@@ -65,7 +67,7 @@ export const POST = handle(async (req: Request) => {
         provider: ai.provider,
         model: ai.model,
         status: "ready",
-        sourceSnapshot: { repo: repo ?? null, commits },
+        sourceSnapshot: activity,
       })
       .returning();
 
