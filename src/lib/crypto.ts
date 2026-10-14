@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 const VERSION = "v1";
 
@@ -38,4 +38,9 @@ export function last4(secret: string): string {
 
 export function maskSecret(last: string): string {
   return `••••••••${last}`;
+}
+
+// Purpose-bound key so signatures made for one feature can't be replayed in another.
+export function deriveKey(purpose: string): Buffer {
+  return createHmac("sha256", getKey()).update(purpose).digest();
 }

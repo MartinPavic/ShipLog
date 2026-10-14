@@ -128,3 +128,11 @@
     @apply font-sans;
   }
 }
+@media print {
+  @page {
+    margin: 18mm;
+  }
+  body {
+    background: #fff;
+  }
+}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Markdown } from "@/components/markdown";
+import { ExportMenu } from "@/components/export-menu";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,10 +30,12 @@ export function LogViewer({
   log,
   versions,
   projectId,
+  pdfAllowed,
 }: {
   log: LogView;
   versions: VersionView[];
   projectId: string;
+  pdfAllowed: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -133,9 +136,7 @@ export function LogViewer({
                 <Button size="sm" variant="outline" disabled={busy} onClick={togglePin}>
                   {log.pinned ? "Unpin" : "Pin"}
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(log.content)}>
-                  Copy Markdown
-                </Button>
+                <ExportMenu logId={log.id} projectId={projectId} pdfAllowed={pdfAllowed} />
                 <Button size="sm" variant="outline" disabled={busy} onClick={regenerate}>
                   Regenerate
                 </Button>

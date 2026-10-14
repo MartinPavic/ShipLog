@@ -12,6 +12,7 @@ import { TEMPLATES, type TemplateId } from "@/lib/ai/templates";
 import { formatDate } from "@/lib/format";
 import { listLogs } from "@/lib/logs";
 import { getOwner, isAdmin } from "@/lib/owner";
+import { getOwnerSlug } from "@/lib/owner-profile";
 import { getPlanLimits } from "@/lib/plans";
 import { getProject } from "@/lib/projects";
 import { getSetupStatus } from "@/lib/settings";
@@ -81,6 +82,7 @@ export default async function ProjectPage({
 
   const tab = TABS.find((t) => t.id === sp.tab)?.id ?? "overview";
   const { limits } = await getPlanLimits(owner.ownerId);
+  const ownerSlug = tab === "settings" && project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -117,6 +119,14 @@ export default async function ProjectPage({
 
       {tab === "settings" && (
         <div className="space-y-6">
+          {ownerSlug && (
+            <p className="text-sm text-muted-foreground">
+              Public changelog:{" "}
+              <Link href={`/p/${ownerSlug}/${project.slug}`} className="underline underline-offset-2">
+                /p/{ownerSlug}/{project.slug}
+              </Link>
+            </p>
+          )}
           <ProjectForm
             mode="edit"
             projectId={project.id}
