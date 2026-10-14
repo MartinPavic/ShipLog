@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
@@ -13,16 +14,16 @@ export default async function DashboardPage() {
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <a
-          href="/dashboard/ship-log"
+        <Link
+          href="/dashboard/projects"
           className="rounded-lg border p-6 hover:bg-muted/50 transition"
         >
-          <h2 className="font-semibold mb-1">AI Ship Log</h2>
+          <h2 className="font-semibold mb-1">Projects</h2>
           <p className="text-sm text-muted-foreground">
             Create this week’s progress report in seconds
           </p>
-        </a>
-        <a
+        </Link>
+        <Link
           href="/dashboard/settings"
           className="rounded-lg border p-6 hover:bg-muted/50 transition"
         >
@@ -30,7 +31,7 @@ export default async function DashboardPage() {
           <p className="text-sm text-muted-foreground">
             Connect GitHub & AI keys
           </p>
-        </a>
+        </Link>
       </div>
     </div>
   );

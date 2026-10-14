@@ -9,7 +9,7 @@ export class ApiClientError extends Error {
 
 export async function apiRequest<T = unknown>(
   url: string,
-  method: "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
   const res = await fetch(url, {

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 const isProtectedPage = createRouteMatcher(["/dashboard(.*)"]);
 const isProtectedApi = createRouteMatcher([
-  "/api/(settings|projects|ship-log|github)(.*)",
+  "/api/(settings|projects|logs|github)(.*)",
   "/api/stripe/(checkout|portal)",
 ]);
 
