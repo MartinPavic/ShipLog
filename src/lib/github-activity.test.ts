@@ -3,6 +3,7 @@ import {
   type Activity,
   type RepoActivity,
   applyBudget,
+  asActivity,
   dropPullCommits,
   excerpt,
   formatActivity,
@@ -186,5 +187,15 @@ describe("excerpt", () => {
   it("collapses whitespace and truncates", () => {
     expect(excerpt("a   b\n c")).toBe("a b c");
     expect(excerpt("x".repeat(400), 10)).toHaveLength(10);
+  });
+});
+
+describe("asActivity", () => {
+  it("accepts well-formed snapshots only", () => {
+    const valid = { since: "", until: "", repos: [repoActivity("o/a", 1)] };
+    expect(asActivity(valid)).toBe(valid);
+    expect(asActivity(null)).toBeNull();
+    expect(asActivity({ repo: "o/a", commits: "- old format" })).toBeNull();
+    expect(asActivity({ repos: [{ repo: "o/a" }] })).toBeNull();
   });
 });

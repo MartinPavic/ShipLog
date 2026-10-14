@@ -93,3 +93,17 @@ describe("logListQuerySchema", () => {
     expect(logListQuerySchema.safeParse({ pageSize: "500" }).success).toBe(false);
   });
 });
+
+describe("generateSchema date range", () => {
+  it("accepts a valid range", () => {
+    const parsed = generateSchema.parse({ from: "2026-10-01", to: "2026-10-07" });
+    expect(parsed.from).toEqual(new Date("2026-10-01"));
+  });
+
+  it("requires both ends, in order, within 90 days", () => {
+    expect(generateSchema.safeParse({ from: "2026-10-01" }).success).toBe(false);
+    expect(generateSchema.safeParse({ from: "2026-10-07", to: "2026-10-01" }).success).toBe(false);
+    expect(generateSchema.safeParse({ from: "2026-01-01", to: "2026-06-01" }).success).toBe(false);
+    expect(generateSchema.safeParse({ from: "garbage", to: "2026-10-01" }).success).toBe(false);
+  });
+});

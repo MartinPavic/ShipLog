@@ -11,7 +11,8 @@ export type CompletionInput = {
   signal?: AbortSignal;
 };
 
-const TIMEOUT_MS = 60_000;
+const COMPLETE_TIMEOUT_MS = 60_000;
+const STREAM_TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_TOKENS = 2048;
 
 const ENDPOINTS: Record<AiProvider, string> = {
@@ -42,10 +43,10 @@ export function mapProviderStatus(provider: AiProvider, status: number): ApiErro
   return new ApiError(502, `${label} is temporarily unavailable. Try again shortly.`, "AI_UNAVAILABLE");
 }
 
-function buildRequest({ provider, key, model, system, prompt }: CompletionInput): {
-  headers: Record<string, string>;
-  body: unknown;
-} {
+function buildRequest(
+  { provider, key, model, system, prompt }: CompletionInput,
+  stream: boolean
+): { headers: Record<string, string>; body: unknown } {
   if (provider === "anthropic") {
     return {
       headers: {
@@ -56,6 +57,7 @@ function buildRequest({ provider, key, model, system, prompt }: CompletionInput)
       body: {
         model,
         max_tokens: MAX_OUTPUT_TOKENS,
+        ...(stream ? { stream: true } : {}),
         ...(system ? { system } : {}),
         messages: [{ role: "user", content: prompt }],
       },
@@ -65,9 +67,31 @@ function buildRequest({ provider, key, model, system, prompt }: CompletionInput)
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: {
       model,
+      ...(stream ? { stream: true } : {}),
       messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
     },
   };
+}
+
+async function request(input: CompletionInput, stream: boolean): Promise<Response> {
+  const { provider } = input;
+  const label = PROVIDER_LABELS[provider];
+  const timeout = AbortSignal.timeout(stream ? STREAM_TIMEOUT_MS : COMPLETE_TIMEOUT_MS);
+  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+  const { headers, body } = buildRequest(input, stream);
+
+  let res: Response;
+  try {
+    res = await fetch(ENDPOINTS[provider], { method: "POST", headers, body: JSON.stringify(body), signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new ApiError(504, `${label} took too long to respond. Try again.`, "AI_TIMEOUT");
+    }
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(502, `Could not reach ${label}. Try again shortly.`, "AI_UNAVAILABLE");
+  }
+  if (!res.ok) throw mapProviderStatus(provider, res.status);
+  return res;
 }
 
 function extractText(provider: AiProvider, data: unknown): string {
@@ -80,25 +104,96 @@ function extractText(provider: AiProvider, data: unknown): string {
 }
 
 export async function complete(input: CompletionInput): Promise<string> {
-  const { provider } = input;
-  const label = PROVIDER_LABELS[provider];
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
-  const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
-  const { headers, body } = buildRequest(input);
+  const res = await request(input, false);
+  const text = extractText(input.provider, await res.json()).trim();
+  if (!text) {
+    throw new ApiError(502, `${PROVIDER_LABELS[input.provider]} returned an empty response. Try again.`, "AI_EMPTY");
+  }
+  return text;
+}
 
-  let res: Response;
+export type SseEvent = { event: string | null; data: string };
+
+function parseSseBlock(block: string): SseEvent | null {
+  let event: string | null = null;
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (!line || line.startsWith(":")) continue;
+    const colon = line.indexOf(":");
+    const field = colon === -1 ? line : line.slice(0, colon);
+    const value = colon === -1 ? "" : line.slice(colon + 1).replace(/^ /, "");
+    if (field === "event") event = value;
+    else if (field === "data") data.push(value);
+  }
+  return data.length ? { event, data: data.join("\n") } : null;
+}
+
+export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
   try {
-    res = await fetch(ENDPOINTS[provider], { method: "POST", headers, body: JSON.stringify(body), signal });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // Normalising the whole buffer handles a \r\n split across chunks.
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, "\n");
+      let end: number;
+      while ((end = buffer.indexOf("\n\n")) !== -1) {
+        const event = parseSseBlock(buffer.slice(0, end));
+        buffer = buffer.slice(end + 2);
+        if (event) yield event;
+      }
+    }
+    const rest = parseSseBlock((buffer + decoder.decode()).replace(/\r\n/g, "\n"));
+    if (rest) yield rest;
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+function parseJson(provider: AiProvider, raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new ApiError(502, `${PROVIDER_LABELS[provider]} sent an unreadable response. Try again.`, "AI_UNAVAILABLE");
+  }
+}
+
+async function* readTextDeltas(provider: AiProvider, body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const unavailable = () =>
+    new ApiError(502, `${PROVIDER_LABELS[provider]} stopped responding mid-way. Try again.`, "AI_UNAVAILABLE");
+
+  try {
+    for await (const evt of parseSse(body)) {
+      if (provider === "anthropic") {
+        if (evt.event === "error") throw unavailable();
+        if (evt.event === "message_stop") return;
+        if (evt.event !== "content_block_delta") continue;
+        const delta = parseJson(provider, evt.data).delta as { type?: string; text?: string } | undefined;
+        if (delta?.type === "text_delta" && delta.text) yield delta.text;
+      } else {
+        if (evt.data === "[DONE]") return;
+        const json = parseJson(provider, evt.data);
+        if (json.error) throw unavailable();
+        const choices = json.choices as { delta?: { content?: string | null } }[] | undefined;
+        const text = choices?.[0]?.delta?.content;
+        if (text) yield text;
+      }
+    }
   } catch (err) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
-      throw new ApiError(504, `${label} took too long to respond. Try again.`, "AI_TIMEOUT");
+      throw new ApiError(504, `${PROVIDER_LABELS[provider]} took too long to respond. Try again.`, "AI_TIMEOUT");
     }
-    throw new ApiError(502, `Could not reach ${label}. Try again shortly.`, "AI_UNAVAILABLE");
+    throw err;
   }
+}
 
-  if (!res.ok) throw mapProviderStatus(provider, res.status);
-
-  const text = extractText(provider, await res.json()).trim();
-  if (!text) throw new ApiError(502, `${label} returned an empty response. Try again.`, "AI_EMPTY");
-  return text;
+// Connects and checks the status eagerly so callers can still return a proper HTTP error.
+export async function openCompletionStream(input: CompletionInput): Promise<AsyncGenerator<string>> {
+  const res = await request(input, true);
+  if (!res.body) {
+    throw new ApiError(502, `${PROVIDER_LABELS[input.provider]} sent an empty response. Try again.`, "AI_EMPTY");
+  }
+  return readTextDeltas(input.provider, res.body);
 }

@@ -15,6 +15,7 @@ import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { getProject } from "@/lib/projects";
 import { getSetupStatus } from "@/lib/settings";
+import { getUsageMeter } from "@/lib/usage";
 import { logListQuerySchema } from "@/lib/validation";
 
 const TABS = [
@@ -48,7 +49,8 @@ function LogList({
               <CardTitle className="flex items-center gap-2 text-base">
                 {log.title}
                 {log.pinned && <Badge variant="secondary">Pinned</Badge>}
-                {log.status !== "ready" && <Badge variant="destructive">{log.status}</Badge>}
+                {log.status === "generating" && <Badge variant="secondary">Generating</Badge>}
+                {log.status === "failed" && <Badge variant="destructive">Failed</Badge>}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
                 {TEMPLATES[log.template as TemplateId]?.label ?? log.template} · {formatDate(log.createdAt)}
@@ -102,7 +104,13 @@ export default async function ProjectPage({
       </nav>
 
       {tab === "overview" && (
-        <OverviewTab owner={owner} projectId={project.id} defaultDays={project.defaultPeriodDays} limits={limits} />
+        <OverviewTab
+          owner={owner}
+          projectId={project.id}
+          defaultDays={project.defaultPeriodDays}
+          defaultTemplate={project.template as TemplateId}
+          limits={limits}
+        />
       )}
 
       {tab === "history" && <HistoryTab owner={owner} projectId={project.id} sp={sp} limits={limits} />}
@@ -144,16 +152,19 @@ async function OverviewTab({
   owner,
   projectId,
   defaultDays,
+  defaultTemplate,
   limits,
 }: {
   owner: Awaited<ReturnType<typeof getOwner>>;
   projectId: string;
   defaultDays: number;
+  defaultTemplate: TemplateId;
   limits: Awaited<ReturnType<typeof getPlanLimits>>["limits"];
 }) {
-  const [status, recent] = await Promise.all([
+  const [status, recent, usage] = await Promise.all([
     getSetupStatus(owner),
     listLogs(owner.ownerId, projectId, logListQuerySchema.parse({ pageSize: 5 }), limits),
+    getUsageMeter(owner.ownerId),
   ]);
   const setupMessage = !status.github
     ? "Connect GitHub first."
@@ -163,7 +174,13 @@ async function OverviewTab({
 
   return (
     <div className="space-y-6">
-      <ProjectGenerate projectId={projectId} defaultDays={defaultDays} setupMessage={setupMessage} />
+      <ProjectGenerate
+        projectId={projectId}
+        defaultDays={defaultDays}
+        defaultTemplate={defaultTemplate}
+        setupMessage={setupMessage}
+        usage={{ used: usage.used, limit: usage.limit }}
+      />
       {recent.items.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LogViewer } from "@/components/log-viewer";
+import { SourcePanel } from "@/components/source-panel";
 import { ApiError } from "@/lib/api";
+import { asActivity } from "@/lib/github-activity";
 import { assertLogVisible, getLog, listVersions } from "@/lib/logs";
 import { getOwner } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
@@ -27,6 +29,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
   }
 
   const versions = await listVersions(log.id);
+  const activity = asActivity(log.sourceSnapshot);
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -50,6 +53,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
         }}
         versions={versions.map((v) => ({ id: v.id, content: v.content, createdAt: v.createdAt.toISOString() }))}
       />
+      {activity && <SourcePanel activity={activity} />}
     </div>
   );
 }

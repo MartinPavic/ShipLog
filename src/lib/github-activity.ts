@@ -212,3 +212,20 @@ export function formatActivity(activity: Activity): string {
   }
   return blocks.join("\n\n");
 }
+
+// Snapshots from before this format existed are not usable for display.
+export function asActivity(value: unknown): Activity | null {
+  if (!value || typeof value !== "object") return null;
+  const repos = (value as { repos?: unknown }).repos;
+  if (!Array.isArray(repos)) return null;
+  const valid = repos.every(
+    (r) =>
+      r &&
+      typeof r.repo === "string" &&
+      Array.isArray(r.commits) &&
+      Array.isArray(r.pullRequests) &&
+      Array.isArray(r.issues) &&
+      Array.isArray(r.releases)
+  );
+  return valid ? (value as Activity) : null;
+}
