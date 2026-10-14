@@ -64,11 +64,23 @@ export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export const updateProjectSchema = z.object(projectFields).partial();
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 
-export const generateSchema = z.object({
-  days: periodDaysSchema.optional(),
-  template: z.enum(TEMPLATE_IDS).optional(),
-  regenerateLogId: uuidSchema.optional(),
-});
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const generateSchema = z
+  .object({
+    days: periodDaysSchema.optional(),
+    // Inclusive calendar range; takes precedence over `days`.
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    template: z.enum(TEMPLATE_IDS).optional(),
+    regenerateLogId: uuidSchema.optional(),
+  })
+  .refine((v) => (v.from === undefined) === (v.to === undefined), "Provide both a start and an end date")
+  .refine((v) => !v.from || !v.to || v.from <= v.to, "The start date must not be after the end date")
+  .refine(
+    (v) => !v.from || !v.to || v.to.getTime() - v.from.getTime() < 90 * DAY_MS,
+    "The date range can be at most 90 days"
+  );
 
 export const updateLogSchema = z
   .object({

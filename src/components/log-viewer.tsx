@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
+import { streamGeneration } from "@/lib/client-generate";
 import { formatDate, formatDateTime } from "@/lib/format";
 
 type LogView = {
@@ -40,7 +41,7 @@ export function LogViewer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [limitReached, setLimitReached] = useState(false);
-
+  const [streaming, setStreaming] = useState<string | null>(null);
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -71,13 +72,13 @@ export function LogViewer({
   const regenerate = () =>
     run(async () => {
       if (!window.confirm("Regenerate this log? The current text is kept in version history.")) return;
-      const { log: next } = await apiRequest<{ log: { title: string; content: string } }>(
-        `/api/projects/${projectId}/generate`,
-        "POST",
-        { regenerateLogId: log.id }
-      );
-      setTitle(next.title);
-      setContent(next.content);
+      setStreaming("");
+      try {
+        const result = await streamGeneration(projectId, { regenerateLogId: log.id }, setStreaming);
+        setContent(result.content);
+      } finally {
+        setStreaming(null);
+      }
       router.refresh();
     });
 
@@ -98,7 +99,8 @@ export function LogViewer({
             <CardTitle className="flex flex-wrap items-center gap-2">
               {log.title}
               {log.pinned && <Badge variant="secondary">Pinned</Badge>}
-              {log.status !== "ready" && <Badge variant="destructive">{log.status}</Badge>}
+              {log.status === "generating" && <Badge variant="secondary">Generating</Badge>}
+              {log.status === "failed" && <Badge variant="destructive">Failed</Badge>}
             </CardTitle>
           )}
           <p className="text-sm text-muted-foreground">
@@ -159,7 +161,7 @@ export function LogViewer({
               aria-label="Content"
             />
           ) : (
-            <Markdown>{log.content || "_Empty_"}</Markdown>
+            <Markdown>{streaming ?? (log.content || "_Empty_")}</Markdown>
           )}
         </CardContent>
       </Card>
