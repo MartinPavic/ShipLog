@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AI_PROVIDERS } from "@/lib/ai/models";
+import { TEMPLATE_IDS } from "@/lib/ai/templates";
 
 export { AI_PROVIDERS, type AiProvider } from "@/lib/ai/models";
 
@@ -10,17 +11,82 @@ export const repoNameSchema = z
 
 export const periodDaysSchema = z.coerce.number().int().min(1).max(90);
 
+export const uuidSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Invalid id");
+
 export const aiSettingsSchema = z.object({
   provider: z.enum(AI_PROVIDERS),
   apiKey: z.string().trim().min(8).max(500).optional(),
   model: z.string().trim().min(1).max(100).optional(),
 });
 
-export const githubTokenSchema = z.object({
-  token: z.string().trim().min(10).max(255),
+// Empty strings clear the field.
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => v || null)
+    .nullable()
+    .optional();
+
+const repoSchema = z.object({
+  fullName: repoNameSchema,
+  branch: z
+    .string()
+    .trim()
+    .regex(/^[\w./-]{1,100}$/, "Invalid branch name")
+    .optional(),
 });
 
-export const generateSchema = z.object({
-  repo: repoNameSchema.nullish(),
-  days: periodDaysSchema.default(7),
+const projectFields = {
+  name: z.string().trim().min(1, "Name is required").max(80),
+  description: optionalText(500),
+  repos: z.array(repoSchema).max(20),
+  template: z.enum(TEMPLATE_IDS),
+  tone: optionalText(100),
+  audience: optionalText(200),
+  customPrompt: optionalText(1000),
+  defaultPeriodDays: periodDaysSchema,
+  isPublicChangelog: z.boolean(),
+};
+
+export const createProjectSchema = z.object({
+  ...projectFields,
+  repos: projectFields.repos.default([]),
+  template: projectFields.template.default("weekly_update"),
+  defaultPeriodDays: periodDaysSchema.default(7),
+  isPublicChangelog: projectFields.isPublicChangelog.default(false),
 });
+export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+
+export const updateProjectSchema = z.object(projectFields).partial();
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+
+export const generateSchema = z.object({
+  days: periodDaysSchema.optional(),
+  template: z.enum(TEMPLATE_IDS).optional(),
+  regenerateLogId: uuidSchema.optional(),
+});
+
+export const updateLogSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    content: z.string().max(50_000),
+    pinned: z.boolean(),
+  })
+  .partial()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
+
+const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
+
+export const logListQuerySchema = z.object({
+  q: z.preprocess(emptyToUndefined, z.string().trim().max(100).optional()),
+  from: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  to: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  pinned: z.preprocess((v) => v === "1" || v === "true", z.boolean()),
+  page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(1000).default(1)),
+  pageSize: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(50).default(20)),
+});
+export type LogListQuery = z.infer<typeof logListQuerySchema>;

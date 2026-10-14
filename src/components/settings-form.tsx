@@ -125,6 +125,7 @@ export function AiCard({ ai, canManage }: { ai: AiStatus; canManage: boolean }) 
           <Label>Provider</Label>
           <Select
             value={provider}
+            items={PROVIDER_LABELS}
             onValueChange={(v) => v && setProvider(v as AiProvider)}
             disabled={!canManage}
           >
