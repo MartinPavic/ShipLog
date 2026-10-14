@@ -87,9 +87,22 @@ export const updateLogSchema = z
     title: z.string().trim().min(1).max(200),
     content: z.string().max(50_000),
     pinned: z.boolean(),
+    published: z.boolean(),
   })
   .partial()
   .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
+
+export const shareSchema = z.object({
+  password: z.union([z.string().min(6, "Password must be at least 6 characters").max(100), z.literal("")]).nullable().optional(),
+  rotate: z.boolean().optional(),
+});
+
+export const exportQuerySchema = z.object({
+  format: z.enum(["markdown", "html", "slack"]).default("markdown"),
+  download: z.preprocess((v) => v === "1" || v === "true", z.boolean()),
+});
+
+export const unlockSchema = z.object({ password: z.string().min(1).max(100) });
 
 const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { handle, parseBody } from "@/lib/api";
 import { getOwner, requireAdmin } from "@/lib/owner";
+import { ensureOwnerSlug } from "@/lib/owner-profile";
 import { archiveProject, requireProject, updateProject } from "@/lib/projects";
 import { updateProjectSchema } from "@/lib/validation";
 
@@ -16,7 +17,9 @@ export const PATCH = handle(async (req: Request, ctx: Ctx) => {
   const owner = await getOwner();
   const { id } = await ctx.params;
   const patch = await parseBody(req, updateProjectSchema);
-  return NextResponse.json({ project: await updateProject(owner.ownerId, id, patch) });
+  const project = await updateProject(owner.ownerId, id, patch);
+  if (project.isPublicChangelog) await ensureOwnerSlug(owner);
+  return NextResponse.json({ project });
 });
 
 // Archives rather than deletes, so logs and public links stay recoverable.

@@ -3,12 +3,19 @@ import { getDb } from "@/db";
 import { shipLogVersions, shipLogs } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import type { PlanLimits } from "@/lib/plans";
+import { createShareToken, hashPassword } from "@/lib/share";
 import { uuidSchema, type LogListQuery } from "@/lib/validation";
 
-const { sharePasswordHash: _omit, ...publicColumns } = getTableColumns(shipLogs);
+const { sharePasswordHash: _omit, ...columns } = getTableColumns(shipLogs);
 void _omit;
 
-export type ShipLog = Omit<typeof shipLogs.$inferSelect, "sharePasswordHash">;
+// The password hash never leaves the server; callers only learn whether one is set.
+const publicColumns = {
+  ...columns,
+  hasSharePassword: sql<boolean>`${shipLogs.sharePasswordHash} is not null`,
+};
+
+export type ShipLog = Omit<typeof shipLogs.$inferSelect, "sharePasswordHash"> & { hasSharePassword: boolean };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -98,19 +105,46 @@ export async function assertLogVisible(log: ShipLog, limits: Pick<PlanLimits, "v
 export async function updateLog(
   userId: string,
   log: ShipLog,
-  patch: { title?: string; content?: string; pinned?: boolean }
+  patch: { title?: string; content?: string; pinned?: boolean; published?: boolean }
 ): Promise<ShipLog> {
+  const { published, ...fields } = patch;
+  if (published && log.status !== "ready") {
+    throw new ApiError(400, "Only finished logs can be published.", "VALIDATION");
+  }
+  // Re-publishing keeps the original publish date.
+  const publishedAt = published === undefined ? undefined : published ? (log.publishedAt ?? new Date()) : null;
+
   return getDb().transaction(async (tx) => {
     if (patch.content !== undefined && patch.content !== log.content) {
       await tx.insert(shipLogVersions).values({ logId: log.id, content: log.content, createdBy: userId });
     }
     const [row] = await tx
       .update(shipLogs)
-      .set(patch)
+      .set({ ...fields, ...(publishedAt !== undefined ? { publishedAt } : {}) })
       .where(eq(shipLogs.id, log.id))
       .returning(publicColumns);
     return row;
   });
+}
+
+// `password`: undefined keeps the current one, null/"" removes it, a string sets it.
+export async function enableShare(
+  log: ShipLog,
+  opts: { password?: string | null; rotate?: boolean }
+): Promise<ShipLog> {
+  if (log.status !== "ready") throw new ApiError(400, "Only finished logs can be shared.", "VALIDATION");
+
+  const set: { shareToken?: string; sharePasswordHash?: string | null } = {};
+  if (!log.shareToken || opts.rotate) set.shareToken = createShareToken();
+  if (opts.password !== undefined) set.sharePasswordHash = opts.password ? await hashPassword(opts.password) : null;
+  if (Object.keys(set).length === 0) return log;
+
+  const [row] = await getDb().update(shipLogs).set(set).where(eq(shipLogs.id, log.id)).returning(publicColumns);
+  return row;
+}
+
+export async function disableShare(logId: string): Promise<void> {
+  await getDb().update(shipLogs).set({ shareToken: null, sharePasswordHash: null }).where(eq(shipLogs.id, logId));
 }
 
 export async function deleteLog(ownerId: string, id: string): Promise<void> {

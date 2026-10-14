@@ -125,11 +125,13 @@ export const shipLogs = pgTable(
     pinned: boolean("pinned").notNull().default(false),
     shareToken: text("share_token"),
     sharePasswordHash: text("share_password_hash"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     index("ship_logs_owner_idx").on(t.ownerId),
     index("ship_logs_project_created_idx").on(t.projectId, t.createdAt.desc()),
+    index("ship_logs_project_published_idx").on(t.projectId, t.publishedAt.desc()),
     uniqueIndex("ship_logs_share_token_idx").on(t.shareToken),
   ]
 );
@@ -178,4 +180,22 @@ export const deliveries = pgTable(
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("deliveries_log_idx").on(t.logId)]
+);
+
+// Public handle for an owner, used in /p/<ownerSlug>/<projectSlug> changelog URLs.
+export const ownerProfiles = pgTable("owner_profiles", {
+  ownerId: text("owner_id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  createdAt: createdAt(),
+});
+
+// Fixed-window counters for abuse protection.
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.windowStart] })]
 );
