@@ -15,6 +15,13 @@
       "when": 1791974738360,
       "tag": "0001_soft_layla_miller",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791986467196,
+      "tag": "0002_handy_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

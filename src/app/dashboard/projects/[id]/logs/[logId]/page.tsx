@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LogViewer } from "@/components/log-viewer";
+import { DeliverPanel } from "@/components/deliver-panel";
 import { SharePanel } from "@/components/share-panel";
 import { SourcePanel } from "@/components/source-panel";
 import { ApiError } from "@/lib/api";
 import { appUrl } from "@/lib/app-url";
+import { listChannels, listDeliveries } from "@/lib/delivery";
 import { asActivity } from "@/lib/github-activity";
 import { assertLogVisible, getLog, listVersions } from "@/lib/logs";
 import { getOwner } from "@/lib/owner";
@@ -35,6 +37,8 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
   const versions = await listVersions(log.id);
   const activity = asActivity(log.sourceSnapshot);
   const ownerSlug = project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
+  const [channels, deliveries] =
+    log.status === "ready" ? await Promise.all([listChannels(project.id), listDeliveries(log.id)]) : [[], []];
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -71,6 +75,15 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
             published: log.publishedAt !== null,
             pageUrl: ownerSlug ? `${appUrl()}/p/${ownerSlug}/${project.slug}` : null,
           }}
+        />
+      )}
+      {log.status === "ready" && (
+        <DeliverPanel
+          logId={log.id}
+          projectId={project.id}
+          allowed={limits.delivery}
+          channels={channels.filter((c) => c.enabled).map((c) => ({ id: c.id, kind: c.kind, hint: c.hint }))}
+          history={deliveries.map((d) => ({ ...d, sentAt: d.sentAt.toISOString() }))}
         />
       )}
       {activity && <SourcePanel activity={activity} />}

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { AI_PROVIDERS } from "@/lib/ai/models";
 import { TEMPLATE_IDS } from "@/lib/ai/templates";
+import { isValidTimezone } from "@/lib/schedule";
+import { isAllowedWebhook } from "@/lib/webhooks";
 
 export { AI_PROVIDERS, type AiProvider } from "@/lib/ai/models";
 
@@ -61,7 +63,16 @@ export const createProjectSchema = z.object({
 });
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
-export const updateProjectSchema = z.object(projectFields).partial();
+export const scheduleSchema = z.object({
+  enabled: z.boolean(),
+  dayOfWeek: z.number().int().min(0).max(6),
+  hour: z.number().int().min(0).max(23),
+  timezone: z.string().refine(isValidTimezone, "Unknown timezone"),
+  periodDays: periodDaysSchema,
+  autoDeliver: z.boolean(),
+});
+
+export const updateProjectSchema = z.object({ ...projectFields, schedule: scheduleSchema.nullable() }).partial();
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -115,3 +126,22 @@ export const logListQuerySchema = z.object({
   pageSize: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(50).default(20)),
 });
 export type LogListQuery = z.infer<typeof logListQuerySchema>;
+
+const slackUrl = z.string().trim().refine((v) => isAllowedWebhook("slack", v), "Enter a Slack incoming webhook URL (https://hooks.slack.com/services/…)");
+const discordUrl = z.string().trim().refine((v) => isAllowedWebhook("discord", v), "Enter a Discord webhook URL (https://discord.com/api/webhooks/…)");
+const recipients = z.array(z.string().trim().toLowerCase().pipe(z.email("Enter valid email addresses"))).min(1, "Add at least one recipient").max(10);
+
+export const createChannelSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("slack"), webhookUrl: slackUrl }),
+  z.object({ kind: z.literal("discord"), webhookUrl: discordUrl }),
+  z.object({ kind: z.literal("email"), recipients }),
+]);
+export type CreateChannelInput = z.infer<typeof createChannelSchema>;
+
+// Which fields are meaningful depends on the channel's kind; the service validates them against it.
+export const updateChannelSchema = z
+  .object({ enabled: z.boolean(), webhookUrl: z.string().trim().max(500), recipients })
+  .partial()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
+
+export const deliverSchema = z.object({ channelIds: z.array(uuidSchema).max(10).optional() });

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArchiveProjectButton } from "@/components/archive-project-button";
-import { ProjectForm } from "@/components/project-form";
+import { ChannelsManager } from "@/components/channels-manager";
+import { DEFAULT_SCHEDULE, ProjectForm } from "@/components/project-form";
 import { ProjectGenerate } from "@/components/project-generate";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
@@ -10,11 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TEMPLATES, type TemplateId } from "@/lib/ai/templates";
 import { formatDate } from "@/lib/format";
+import { listChannels } from "@/lib/delivery";
+import { isEmailConfigured } from "@/lib/email";
 import { listLogs } from "@/lib/logs";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getOwnerSlug } from "@/lib/owner-profile";
 import { getPlanLimits } from "@/lib/plans";
 import { getProject } from "@/lib/projects";
+import { getLastRun } from "@/lib/scheduler";
 import { getSetupStatus } from "@/lib/settings";
 import { getUsageMeter } from "@/lib/usage";
 import { logListQuerySchema } from "@/lib/validation";
@@ -22,6 +26,7 @@ import { logListQuerySchema } from "@/lib/validation";
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "history", label: "History" },
+  { id: "delivery", label: "Delivery" },
   { id: "settings", label: "Settings" },
 ] as const;
 
@@ -83,6 +88,7 @@ export default async function ProjectPage({
   const tab = TABS.find((t) => t.id === sp.tab)?.id ?? "overview";
   const { limits } = await getPlanLimits(owner.ownerId);
   const ownerSlug = tab === "settings" && project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
+  const lastRun = tab === "settings" ? await getLastRun(project.id) : null;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -117,6 +123,21 @@ export default async function ProjectPage({
 
       {tab === "history" && <HistoryTab owner={owner} projectId={project.id} sp={sp} limits={limits} />}
 
+      {tab === "delivery" && (
+        <ChannelsManager
+          projectId={project.id}
+          initialChannels={(await listChannels(project.id)).map((c) => ({
+            id: c.id,
+            kind: c.kind,
+            enabled: c.enabled,
+            hint: c.hint,
+          }))}
+          canManage={isAdmin(owner)}
+          deliveryAllowed={limits.delivery}
+          emailConfigured={isEmailConfigured()}
+        />
+      )}
+
       {tab === "settings" && (
         <div className="space-y-6">
           {ownerSlug && (
@@ -140,7 +161,10 @@ export default async function ProjectPage({
               customPrompt: project.customPrompt ?? "",
               defaultPeriodDays: project.defaultPeriodDays,
               isPublicChangelog: project.isPublicChangelog,
+              schedule: project.schedule ?? DEFAULT_SCHEDULE,
             }}
+            schedulingAllowed={limits.scheduling}
+            lastRun={lastRun ? { slot: lastRun.slot, status: lastRun.status, error: lastRun.error } : null}
           />
           {isAdmin(owner) && (
             <Card>

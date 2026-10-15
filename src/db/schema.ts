@@ -199,3 +199,21 @@ export const rateLimits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })]
 );
+
+// One row per project and local schedule date; the row is the claim that makes cron runs idempotent.
+export const scheduledRuns = pgTable(
+  "scheduled_runs",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    slot: text("slot").notNull(), // YYYY-MM-DD in the project's timezone
+    status: text("status", { enum: ["running", "done", "failed", "skipped", "retry"] }).notNull(),
+    attempts: integer("attempts").notNull().default(1),
+    logId: uuid("log_id").references(() => shipLogs.id, { onDelete: "set null" }),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.slot] })]
+);
