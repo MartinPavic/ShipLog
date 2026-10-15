@@ -90,8 +90,10 @@ describe.skipIf(!process.env.DATABASE_URL)("POST /api/projects/[id]/generate (da
   afterAll(async () => {
     const { eq } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, githubConnections, projects, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, githubConnections, projects, rateLimits, usageCounters } = await import("@/db/schema");
+    const { inArray } = await import("drizzle-orm");
     const db = getDb();
+    await db.delete(rateLimits).where(inArray(rateLimits.key, [owner.ownerId, stranger.ownerId].map((id) => `generate:${id}`)));
     await db.delete(projects).where(eq(projects.ownerId, owner.ownerId));
     await db.delete(usageCounters).where(eq(usageCounters.ownerId, owner.ownerId));
     await db.delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
@@ -206,5 +208,38 @@ describe.skipIf(!process.env.DATABASE_URL)("POST /api/projects/[id]/generate (da
 
     const { listVersions } = await import("./logs");
     expect((await listVersions(logId)).map((v) => v.content)).toEqual(["Hello world"]);
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("POST /api/projects/[id]/generate rate limit (database)", () => {
+  it("stops an owner after the hourly cap, before reserving usage or calling anything", async () => {
+    const { GENERATE_RATE, hitRateLimit } = await import("./rate-limit");
+    const rateOwner = { userId: `test_u_${crypto.randomUUID()}`, orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
+    const { createProject } = await import("./projects");
+    const { createProjectSchema } = await import("./validation");
+    const project = await createProject(rateOwner, createProjectSchema.parse({ name: "Rate" }), 5);
+
+    const key = `generate:${rateOwner.ownerId}`;
+    try {
+      for (let i = 0; i < GENERATE_RATE.limit; i++) await hitRateLimit(key, GENERATE_RATE.limit, GENERATE_RATE.windowMs);
+
+      current = rateOwner;
+      const fetchFn = vi.fn();
+      vi.stubGlobal("fetch", fetchFn);
+      const { POST } = await import("@/app/api/projects/[id]/generate/route");
+      const res = await POST(new Request("http://x", { method: "POST", body: "{}" }), { params: Promise.resolve({ id: project.id }) });
+
+      expect(res.status).toBe(429);
+      expect(await res.json()).toMatchObject({ code: "RATE_LIMITED" });
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect((await (await import("./usage")).getUsage(rateOwner.ownerId)).byok).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+      const { getDb } = await import("@/db");
+      const { projects, rateLimits } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await getDb().delete(projects).where(eq(projects.id, project.id));
+      await getDb().delete(rateLimits).where(eq(rateLimits.key, key));
+    }
   });
 });

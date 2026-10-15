@@ -5,6 +5,7 @@ import { assertLogVisible, requireLog } from "@/lib/logs";
 import { getOwner } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { requireProject } from "@/lib/projects";
+import { enforceRateLimit, GENERATE_RATE } from "@/lib/rate-limit";
 import { generateSchema } from "@/lib/validation";
 
 export const maxDuration = 120;
@@ -23,6 +24,9 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     if (existing.projectId !== project.id) throw new ApiError(404, "Log not found", "NOT_FOUND");
     await assertLogVisible(existing, (await getPlanLimits(owner.ownerId)).limits);
   }
+
+  // Before any usage is reserved, so rejected requests cost nothing.
+  await enforceRateLimit(`generate:${owner.ownerId}`, GENERATE_RATE.limit, GENERATE_RATE.windowMs, "generation requests");
 
   const generation = await startStreamingGeneration({
     owner,
