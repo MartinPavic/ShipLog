@@ -69,7 +69,9 @@ function limitError(kind: UsageKind, limit: number) {
   const message =
     kind === "managed" && limit <= 0
       ? "Managed AI is a Pro feature. Add your own API key in Settings or upgrade to Pro."
-      : `Monthly limit reached (${limit} generations). Upgrade to Pro for more.`;
+      : limit <= 0
+        ? "Upgrade this workspace to Pro to generate logs."
+        : `Monthly limit reached (${limit} generations). Upgrade to Pro for more.`;
   return new ApiError(403, message, "LIMIT_REACHED");
 }
 

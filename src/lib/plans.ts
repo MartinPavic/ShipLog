@@ -46,6 +46,16 @@ export function planFromStatus(status: string | null | undefined): Plan {
   return status === "active" || status === "trialing" ? "pro" : "free";
 }
 
+// Clerk organization ids; personal workspaces use the user id.
+export const isOrgOwner = (ownerId: string) => ownerId.startsWith("org_");
+
+// Teams are a Pro feature: a Free organization keeps its data but can't create projects or generate until upgraded.
+const FREE_ORG_LIMITS: PlanLimits = { ...PLAN_LIMITS.free, maxProjects: 0, byokGenerationsPerMonth: 0 };
+
+export function limitsFor(plan: Plan, ownerId: string): PlanLimits {
+  return plan === "free" && isOrgOwner(ownerId) ? FREE_ORG_LIMITS : PLAN_LIMITS[plan];
+}
+
 export async function getPlan(ownerId: string): Promise<Plan> {
   const [row] = await getDb()
     .select({ plan: billingAccounts.plan })
@@ -57,7 +67,7 @@ export async function getPlan(ownerId: string): Promise<Plan> {
 
 export async function getPlanLimits(ownerId: string) {
   const plan = await getPlan(ownerId);
-  return { plan, limits: PLAN_LIMITS[plan] };
+  return { plan, limits: limitsFor(plan, ownerId) };
 }
 
 const FEATURE_LABELS = {

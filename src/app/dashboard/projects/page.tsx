@@ -4,7 +4,7 @@ import { UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
-import { getOwner } from "@/lib/owner";
+import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { listProjects } from "@/lib/projects";
 
@@ -46,10 +46,15 @@ export default async function ProjectsPage() {
         <Card>
           <CardContent className="space-y-3 pt-6">
             <p className="text-sm text-muted-foreground">
-              The {plan === "free" ? "Free" : ""} plan includes {limits.maxProjects} project
-              {limits.maxProjects === 1 ? "" : "s"}. Upgrade to Pro for unlimited projects.
+              {limits.maxProjects === 0
+                ? "Teams are a Pro feature. Upgrade this organization to create projects together."
+                : `The ${plan === "free" ? "Free " : ""}plan includes ${limits.maxProjects} project${limits.maxProjects === 1 ? "" : "s"}. Upgrade to Pro for unlimited projects.`}
             </p>
-            <UpgradeButton />
+            {isAdmin(owner) ? (
+              <UpgradeButton />
+            ) : (
+              <p className="text-sm text-muted-foreground">Ask an organization admin to upgrade.</p>
+            )}
           </CardContent>
         </Card>
       ) : (

@@ -164,6 +164,7 @@ export default async function ProjectPage({
               schedule: project.schedule ?? DEFAULT_SCHEDULE,
             }}
             schedulingAllowed={limits.scheduling}
+            canTakeOver={isAdmin(owner) && project.createdBy !== owner.userId}
             lastRun={lastRun ? { slot: lastRun.slot, status: lastRun.status, error: lastRun.error } : null}
           />
           {isAdmin(owner) && (
