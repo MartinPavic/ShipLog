@@ -221,12 +221,17 @@ function ScheduleCard({
   onChange,
   allowed,
   lastRun,
+  takeOver,
 }: {
   value: ScheduleValues;
   onChange: (value: ScheduleValues) => void;
   allowed: boolean;
   lastRun: LastRun;
+  takeOver: { projectId: string } | null;
 }) {
+  const router = useRouter();
+  const [taking, setTaking] = useState(false);
+  const [takeError, setTakeError] = useState("");
   const set = <K extends keyof ScheduleValues>(key: K, v: ScheduleValues[K]) => onChange({ ...value, [key]: v });
   const locked = !allowed && !value.enabled;
 
@@ -347,6 +352,35 @@ function ScheduleCard({
             {lastRun.error ? ` — ${lastRun.error}` : ""}
           </p>
         )}
+
+        {takeOver && (
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm text-muted-foreground">
+              Scheduled runs use the GitHub connection of the person who created this project.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={taking}
+              onClick={async () => {
+                setTaking(true);
+                setTakeError("");
+                try {
+                  await apiRequest(`/api/projects/${takeOver.projectId}/take-over`, "POST");
+                  router.refresh();
+                } catch (err) {
+                  setTakeError(err instanceof Error ? err.message : "Something went wrong");
+                } finally {
+                  setTaking(false);
+                }
+              }}
+            >
+              Run scheduled logs as me
+            </Button>
+            {takeError && <p className="text-sm text-red-500">{takeError}</p>}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -360,6 +394,7 @@ type Props =
       initial: ProjectFormValues;
       schedulingAllowed: boolean;
       lastRun: LastRun;
+      canTakeOver: boolean;
     };
 
 export function ProjectForm(props: Props) {
@@ -510,6 +545,7 @@ export function ProjectForm(props: Props) {
           onChange={(schedule) => set("schedule", schedule)}
           allowed={props.schedulingAllowed}
           lastRun={props.lastRun}
+          takeOver={props.canTakeOver ? { projectId: props.projectId } : null}
         />
       )}
 

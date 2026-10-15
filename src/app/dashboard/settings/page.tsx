@@ -22,6 +22,13 @@ export default async function SettingsPage({
         <p className="text-muted-foreground">
           Connect your GitHub and AI provider so ShipLog can generate reports.
         </p>
+        {owner.orgId && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            You are in an organization workspace. The AI key and the subscription are shared by the whole
+            organization and managed by its admins. Billing is flat per organization, not per member. GitHub
+            connections stay personal: each member connects their own.
+          </p>
+        )}
       </div>
 
       <GithubCard login={status.github?.login ?? null} notice={githubNotice ?? null} />

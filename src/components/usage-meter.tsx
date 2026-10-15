@@ -2,6 +2,9 @@ export function UsageMeter({ used, limit }: { used: number; limit: number | null
   if (limit === null) {
     return <p className="text-sm text-muted-foreground">{used} generations this month</p>;
   }
+  if (limit === 0) {
+    return <p className="text-sm text-muted-foreground">Generating requires Pro in this workspace</p>;
+  }
   const pct = Math.min(100, Math.round((used / Math.max(limit, 1)) * 100));
   return (
     <div className="space-y-1">

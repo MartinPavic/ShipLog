@@ -6,6 +6,7 @@ import { deliverLog } from "@/lib/delivery";
 import { generateLog } from "@/lib/generation";
 import { notifyProjectCreator } from "@/lib/notify";
 import type { Owner } from "@/lib/owner";
+import { isOrgMember } from "@/lib/orgs";
 import { getPlanLimits } from "@/lib/plans";
 import type { Project } from "@/lib/projects";
 import { currentSlot } from "@/lib/schedule";
@@ -16,8 +17,9 @@ const CONCURRENCY = 3;
 
 // The user has to fix these, so they get a notification; NO_ACTIVITY is just a quiet week.
 const ACTIONABLE = new Set(["NO_GITHUB", "GITHUB_AUTH", "GITHUB_ACCESS", "NO_AI_KEY", "AI_AUTH", "AI_MODEL", "LIMIT_REACHED"]);
-const SKIPPED = new Set([...ACTIONABLE, "NO_ACTIVITY"]);
-const TRANSIENT = new Set(["AI_UNAVAILABLE", "AI_TIMEOUT", "AI_RATE_LIMIT", "GITHUB_UNAVAILABLE"]);
+// CREATOR_LEFT is skipped without a notification: the person who would receive it is no longer in the organization.
+const SKIPPED = new Set([...ACTIONABLE, "NO_ACTIVITY", "CREATOR_LEFT"]);
+const TRANSIENT = new Set(["AI_UNAVAILABLE", "AI_TIMEOUT", "AI_RATE_LIMIT", "GITHUB_UNAVAILABLE", "ORG_CHECK_FAILED"]);
 
 // Takes the slot atomically: first claim, or a re-claim of a retryable / crashed run. Returns the attempt number.
 export async function claimSlot(projectId: string, slot: string, now = new Date()): Promise<number | null> {
@@ -54,6 +56,23 @@ async function finishRun(
 
 export type RunOutcome = "generated" | "skipped" | "failed" | "retry";
 
+async function assertCreatorIsMember(orgId: string, userId: string) {
+  let member: boolean;
+  try {
+    member = await isOrgMember(orgId, userId);
+  } catch (err) {
+    console.error("Could not verify organization membership:", err);
+    throw new ApiError(502, "Could not verify organization membership. Will retry.", "ORG_CHECK_FAILED");
+  }
+  if (!member) {
+    throw new ApiError(
+      400,
+      "The project's creator is no longer a member of this organization. An admin can take over the schedule in the project's settings.",
+      "CREATOR_LEFT"
+    );
+  }
+}
+
 async function runProject(project: Project, slot: string, attempt: number): Promise<RunOutcome> {
   const schedule = project.schedule!;
   const owner: Owner = {
@@ -70,6 +89,8 @@ async function runProject(project: Project, slot: string, attempt: number): Prom
   }
 
   try {
+    // A removed member's GitHub token must not keep acting on the organization's behalf.
+    if (owner.orgId) await assertCreatorIsMember(owner.orgId, owner.userId);
     const log = await generateLog({ owner, project, period: { days: schedule.periodDays } });
 
     let note: string | null = null;
