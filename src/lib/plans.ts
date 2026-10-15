@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { billingAccounts } from "@/db/schema";
+import { ApiError } from "@/lib/api";
 
 export type Plan = "free" | "pro";
 
@@ -57,4 +58,18 @@ export async function getPlan(ownerId: string): Promise<Plan> {
 export async function getPlanLimits(ownerId: string) {
   const plan = await getPlan(ownerId);
   return { plan, limits: PLAN_LIMITS[plan] };
+}
+
+const FEATURE_LABELS = {
+  delivery: "Delivery to Slack, Discord and email",
+  scheduling: "Scheduled logs",
+  pdfExport: "PDF export",
+  teams: "Teams",
+} as const;
+
+export async function requirePlanFeature(ownerId: string, feature: keyof typeof FEATURE_LABELS): Promise<void> {
+  const { limits } = await getPlanLimits(ownerId);
+  if (!limits[feature]) {
+    throw new ApiError(403, `${FEATURE_LABELS[feature]} is a Pro feature. Upgrade to use it.`, "LIMIT_REACHED");
+  }
 }
