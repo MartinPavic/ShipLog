@@ -10,6 +10,16 @@ export class GenerationError extends Error {
   }
 }
 
+// A marker split across chunks must not flash on screen, so any partial prefix at the end is held back.
+export function visibleText(raw: string): string {
+  const at = raw.indexOf(STREAM_ERROR_MARKER);
+  if (at !== -1) return raw.slice(0, at);
+  for (let n = Math.min(STREAM_ERROR_MARKER.length - 1, raw.length); n > 0; n--) {
+    if (raw.endsWith(STREAM_ERROR_MARKER.slice(0, n))) return raw.slice(0, raw.length - n);
+  }
+  return raw;
+}
+
 export type GenerateRequest = {
   days?: number;
   from?: string;
@@ -48,7 +58,7 @@ export async function streamGeneration(
       const { done, value } = await reader.read();
       if (done) break;
       raw += decoder.decode(value, { stream: true });
-      onText(raw.split(STREAM_ERROR_MARKER)[0]);
+      onText(visibleText(raw));
     }
     raw += decoder.decode();
   } catch (err) {
@@ -56,7 +66,9 @@ export async function streamGeneration(
     throw new GenerationError("The connection was interrupted. Please try again.", logId);
   }
 
-  const [content, failure] = raw.split(STREAM_ERROR_MARKER);
-  if (failure !== undefined) throw new GenerationError(failure || "Generation failed.", logId);
-  return { logId, content };
+  const at = raw.indexOf(STREAM_ERROR_MARKER);
+  if (at !== -1) {
+    throw new GenerationError(raw.slice(at + STREAM_ERROR_MARKER.length) || "Generation failed.", logId);
+  }
+  return { logId, content: raw };
 }

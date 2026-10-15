@@ -4,6 +4,9 @@ import { rateLimits } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 
 // Fixed-window counter shared across serverless instances via the database.
+// Per-owner cap on generation requests, on top of the monthly plan limits; it also stops retry loops.
+export const GENERATE_RATE = { limit: 30, windowMs: 60 * 60 * 1000 } as const;
+
 export async function hitRateLimit(key: string, limit: number, windowMs: number) {
   const now = Date.now();
   const windowStart = new Date(Math.floor(now / windowMs) * windowMs);
