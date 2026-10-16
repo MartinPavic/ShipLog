@@ -5,7 +5,7 @@ const SCRYPT = { N: 16384, r: 8, p: 1 };
 const KEY_LEN = 64;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
-export const ACCESS_COOKIE = "shiplog_share_access";
+export const ACCESS_COOKIE = "share_access";
 export const ACCESS_TTL_SEC = 24 * 60 * 60;
 
 export const createShareToken = () => randomBytes(32).toString("base64url");
@@ -42,7 +42,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 const fingerprint = (passwordHash: string) => createHash("sha256").update(passwordHash).digest("base64url").slice(0, 16);
 
 function signature(token: string, passwordHash: string, expiresAt: number): string {
-  return createHmac("sha256", deriveKey("shiplog:share-access"))
+  return createHmac("sha256", deriveKey("share-access"))
     .update(`${token}.${fingerprint(passwordHash)}.${expiresAt}`)
     .digest("base64url");
 }

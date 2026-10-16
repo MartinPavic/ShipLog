@@ -8,11 +8,12 @@ import { UsageMeter } from "@/components/usage-meter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { TemplateId } from "@/lib/ai/templates";
+import { features } from "@/env";
 import { PROJECT_COOKIE } from "@/lib/constants";
 import { getDashboardData } from "@/lib/dashboard";
 import { formatRelative } from "@/lib/format";
 import { getOwner, isAdmin } from "@/lib/owner";
-import { PLAN_LIMITS } from "@/lib/plans";
+import { limitsFor } from "@/lib/plans";
 
 function Stat({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -38,7 +39,8 @@ export default async function DashboardPage({
   const [user, data, cookieStore] = await Promise.all([currentUser(), getDashboardData(owner), cookies()]);
 
   const { plan, stats, usage, projects, recentLogs, onboarding, setup } = data;
-  const maxProjects = PLAN_LIMITS[plan].maxProjects;
+  const maxProjects = limitsFor(plan, owner.ownerId).maxProjects;
+  const billing = features().billing;
   const lastId = cookieStore.get(PROJECT_COOKIE)?.value;
   const initialProject = projects.find((p) => p.id === lastId) ?? projects[0];
   const setupMessage = !setup.github ? "Connect GitHub first." : !setup.canGenerate ? "Add an AI API key first." : null;
@@ -50,10 +52,12 @@ export default async function DashboardPage({
           <h1 className="text-2xl font-bold">Welcome back{user?.firstName ? `, ${user.firstName}` : ""}</h1>
           <p className="text-muted-foreground">Your ship logs at a glance.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={plan === "pro" ? "default" : "secondary"}>{plan === "pro" ? "Pro" : "Free"}</Badge>
-          {isAdmin(owner) && (plan === "pro" ? <ManageBillingButton /> : <UpgradeButton />)}
-        </div>
+        {billing && (
+          <div className="flex items-center gap-3">
+            <Badge variant={plan === "pro" ? "default" : "secondary"}>{plan === "pro" ? "Pro" : "Free"}</Badge>
+            {isAdmin(owner) && (plan === "pro" ? <ManageBillingButton /> : <UpgradeButton />)}
+          </div>
+        )}
       </div>
 
       {success && (

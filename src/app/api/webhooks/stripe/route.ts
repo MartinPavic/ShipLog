@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
+import { features } from "@/env";
 import { claimStripeEvent, processStripeEvent, releaseStripeEvent } from "@/lib/billing";
 import { stripe } from "@/lib/stripe";
 
 export async function POST(req: Request) {
+  if (!features().billing) return NextResponse.json({ error: "Billing is turned off." }, { status: 404 });
   const body = await req.text();
   const signature = req.headers.get("stripe-signature");
   const secret = process.env.STRIPE_WEBHOOK_SECRET;

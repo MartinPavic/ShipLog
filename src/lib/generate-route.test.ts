@@ -126,6 +126,25 @@ describe.skipIf(!process.env.DATABASE_URL)("POST /api/projects/[id]/generate (da
     expect(await usage()).toBe(1);
   });
 
+  it("generates offline from the real activity when AI_PROVIDER=mock", async () => {
+    process.env.AI_PROVIDER = "mock";
+    try {
+      aiResponse = () => {
+        throw new Error("The AI provider must not be called in mock mode");
+      };
+      const res = await post({ days: 7 });
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain("## Highlights");
+      expect(text).toContain("- Add search");
+      const log = await status(res.headers.get("x-ship-log-id")!);
+      expect(log).toMatchObject({ status: "ready", provider: "mock", model: "mock" });
+      expect(await usage()).toBe(1);
+    } finally {
+      delete process.env.AI_PROVIDER;
+    }
+  });
+
   it("accepts a date range and a template override", async () => {
     const day = new Date().toISOString().slice(0, 10);
     const res = await post({ from: day, to: day, template: "changelog" });

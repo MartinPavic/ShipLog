@@ -34,7 +34,7 @@ describe("visibleText", () => {
 
   it("leaves ordinary text alone, including similar-looking characters", () => {
     expect(visibleText("# Heading\n\n- item")).toBe("# Heading\n\n- item");
-    expect(visibleText("ends with SHIPLOG")).toBe("ends with SHIPLOG");
+    expect(visibleText("ends with STREAM_ERR")).toBe("ends with STREAM_ERR");
     expect(visibleText("")).toBe("");
   });
 });

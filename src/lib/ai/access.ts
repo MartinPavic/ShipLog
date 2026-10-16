@@ -3,13 +3,14 @@ import { getDb } from "@/db";
 import { aiCredentials } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { DEFAULT_MODELS, MANAGED_PROVIDER } from "@/lib/ai/models";
+import { isMockAi, managedAiKey } from "@/env";
 import { decrypt } from "@/lib/crypto";
 import { getPlanLimits, type PlanLimits } from "@/lib/plans";
 import type { AiProvider } from "@/lib/validation";
 
 export type AiAccess = {
   kind: "managed" | "byok";
-  provider: AiProvider;
+  provider: AiProvider | "mock";
   key: string;
   model: string;
   limits: PlanLimits;
@@ -27,8 +28,13 @@ export async function getAiCredential(ownerId: string) {
 // Own key wins; otherwise Pro falls back to the server's managed key.
 export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
   const { limits } = await getPlanLimits(ownerId);
-  const credential = await getAiCredential(ownerId);
 
+  // Demo mode: nothing leaves the server and no key is needed, but usage is still counted.
+  if (isMockAi()) {
+    return { kind: limits.managedAi ? "managed" : "byok", provider: "mock", key: "mock", model: "mock", limits };
+  }
+
+  const credential = await getAiCredential(ownerId);
   if (credential) {
     return {
       kind: "byok",
@@ -39,7 +45,7 @@ export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
     };
   }
 
-  const managedKey = process.env.OPENAI_API_KEY;
+  const managedKey = managedAiKey();
   if (limits.managedAi && managedKey) {
     return {
       kind: "managed",

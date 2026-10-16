@@ -6,11 +6,12 @@ import { billingAccounts } from "@/db/schema";
 import { ApiError, handle } from "@/lib/api";
 import { appUrl } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/owner";
-import { planFromStatus } from "@/lib/plans";
+import { assertFeatureEnabled, planFromStatus } from "@/lib/plans";
 import { STRIPE_PRICE_ID, stripe } from "@/lib/stripe";
 
 
 export const POST = handle(async () => {
+  assertFeatureEnabled("billing");
   const owner = await requireAdmin();
   const db = getDb();
 

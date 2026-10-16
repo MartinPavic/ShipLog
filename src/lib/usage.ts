@@ -2,6 +2,7 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { usageCounters } from "@/db/schema";
 import { ApiError } from "@/lib/api";
+import { isMockAi } from "@/env";
 import { getAiCredential } from "@/lib/ai/access";
 import { getPlanLimits, type PlanLimits } from "@/lib/plans";
 
@@ -84,7 +85,7 @@ export async function getUsageMeter(ownerId: string): Promise<UsageMeter> {
     getPlanLimits(ownerId),
     getUsage(ownerId),
   ]);
-  const kind: UsageKind = credential || !limits.managedAi ? "byok" : "managed";
+  const kind: UsageKind = (credential && !isMockAi()) || !limits.managedAi ? "byok" : "managed";
   const limit = limitFor(kind, limits);
   return { kind, used: usage[kind], limit: Number.isFinite(limit) ? limit : null };
 }

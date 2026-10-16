@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { features } from "@/env";
 import { jsonError } from "@/lib/api";
 import { runScheduled } from "@/lib/scheduler";
 
@@ -19,5 +20,6 @@ export async function GET(req: Request) {
   if (!safeEqual(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
     return jsonError(401, "Unauthorized");
   }
+  if (!features().scheduling) return NextResponse.json({ skipped: "Scheduling is turned off." });
   return NextResponse.json(await runScheduled());
 }

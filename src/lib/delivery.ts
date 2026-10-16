@@ -1,3 +1,4 @@
+import { siteConfig } from "@/config/site";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { deliveries, deliveryChannels } from "@/db/schema";
@@ -166,7 +167,7 @@ export async function sendTestMessage(projectId: string, channelId: string): Pro
   const row = await requireChannel(projectId, channelId);
   try {
     await sendMessage(row.kind, readConfig(row), {
-      title: "ShipLog test message",
+      title: `${siteConfig.name} test message`,
       markdown: "This is a test message. If you can read this, delivery is set up correctly.",
     });
   } catch (err) {
