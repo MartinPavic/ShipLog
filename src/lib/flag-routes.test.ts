@@ -33,14 +33,15 @@ describe("billing routes with BILLING_ENABLED=false", () => {
 });
 
 describe("cron route with SCHEDULING_ENABLED=false", () => {
-  it("still requires the secret, then reports that it skipped", async () => {
+  it("reports that it skipped, without needing a secret or touching the database", async () => {
     process.env.SCHEDULING_ENABLED = "false";
-    process.env.CRON_SECRET = "cron-token-value-123456";
+    delete process.env.CRON_SECRET;
     const { GET } = await import("@/app/api/cron/scheduled-logs/route");
-    expect((await GET(new Request("http://x"))).status).toBe(401);
-    const res = await GET(new Request("http://x", { headers: { authorization: "Bearer cron-token-value-123456" } }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ skipped: "Scheduling is turned off." });
+    for (const headers of [{}, { authorization: "Bearer anything" }] as Record<string, string>[]) {
+      const res = await GET(new Request("http://x", { headers }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ skipped: "Scheduling is turned off." });
+    }
   });
 });
 
