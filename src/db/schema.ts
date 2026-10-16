@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { AI_PROVIDERS } from "@/lib/ai/models";
 
 export type ProjectRepo = { fullName: string; branch?: string };
 
@@ -65,7 +66,7 @@ export const aiCredentials = pgTable(
   "ai_credentials",
   {
     ownerId: text("owner_id").notNull(),
-    provider: text("provider", { enum: ["openai", "anthropic", "grok"] }).notNull(),
+    provider: text("provider", { enum: AI_PROVIDERS }).notNull(),
     encryptedKey: text("encrypted_key").notNull(),
     last4: text("last4").notNull(),
     model: text("model"),
