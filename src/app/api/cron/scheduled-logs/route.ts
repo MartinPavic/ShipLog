@@ -15,11 +15,12 @@ function safeEqual(a: string, b: string) {
 
 // Vercel Cron sends `Authorization: Bearer $CRON_SECRET` on its own.
 export async function GET(req: Request) {
+  // Checked first so a deployment with scheduling off (and no secret) doesn't log an error every hour.
+  if (!features().scheduling) return NextResponse.json({ skipped: "Scheduling is turned off." });
   const secret = process.env.CRON_SECRET;
   if (!secret) return jsonError(503, "CRON_SECRET is not configured.");
   if (!safeEqual(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
     return jsonError(401, "Unauthorized");
   }
-  if (!features().scheduling) return NextResponse.json({ skipped: "Scheduling is turned off." });
   return NextResponse.json(await runScheduled());
 }

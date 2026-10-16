@@ -1,0 +1,7 @@
+{
+  "productSlug": "shiplog",
+  "licensor": "REPLACE ME: your legal name or company",
+  "licensorEmail": "REPLACE ME: licensing contact email",
+  "jurisdiction": "REPLACE ME: governing law, e.g. the Republic of Croatia",
+  "forbiddenStrings": ["martinpavic", "curly-star-54529600", "org-hidden-mud-02682037"]
+}
