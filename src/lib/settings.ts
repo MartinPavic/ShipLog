@@ -1,3 +1,4 @@
+import { isMockAi, managedAiKey } from "@/env";
 import { getAiCredential } from "@/lib/ai/access";
 import { getGithubConnection } from "@/lib/github";
 import { getPlanLimits } from "@/lib/plans";
@@ -9,7 +10,8 @@ export async function getSetupStatus(owner: { ownerId: string; userId: string })
     getAiCredential(owner.ownerId),
     getPlanLimits(owner.ownerId),
   ]);
-  const managedAi = limits.managedAi && Boolean(process.env.OPENAI_API_KEY);
+  const demoAi = isMockAi();
+  const managedAi = limits.managedAi && Boolean(managedAiKey());
 
   return {
     plan,
@@ -18,6 +20,7 @@ export async function getSetupStatus(owner: { ownerId: string; userId: string })
       ? { provider: credential.provider, last4: credential.last4, model: credential.model }
       : null,
     managedAi,
-    canGenerate: Boolean(github) && (Boolean(credential) || managedAi),
+    demoAi,
+    canGenerate: Boolean(github) && (demoAi || Boolean(credential) || managedAi),
   };
 }

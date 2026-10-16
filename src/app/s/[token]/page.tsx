@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import { siteConfig } from "@/config/site";
 import { Markdown } from "@/components/markdown";
 import { SharePasswordGate } from "@/components/share-password-gate";
 import { formatDate } from "@/lib/format";
@@ -8,7 +9,7 @@ import { getSharedLog } from "@/lib/public";
 import { ACCESS_COOKIE, verifyAccess } from "@/lib/share";
 
 export const metadata: Metadata = {
-  title: "Shared ship log",
+  title: "Shared log",
   robots: { index: false, follow: false },
 };
 
@@ -38,7 +39,9 @@ export default async function SharedLogPage({ params }: { params: Promise<{ toke
         </p>
       </header>
       <Markdown>{log.content}</Markdown>
-      <footer className="border-t pt-6 text-xs text-muted-foreground">Made with ShipLog</footer>
+      {siteConfig.publicFooter && (
+        <footer className="border-t pt-6 text-xs text-muted-foreground">Made with {siteConfig.name}</footer>
+      )}
     </main>
   );
 }

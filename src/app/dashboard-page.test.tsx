@@ -19,7 +19,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({}),
 }));
 vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: (name: string) => (name === "shiplog_project" && cookieProject ? { value: cookieProject } : undefined) }),
+  cookies: async () => ({ get: (name: string) => (name === "active_project" && cookieProject ? { value: cookieProject } : undefined) }),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {} }),

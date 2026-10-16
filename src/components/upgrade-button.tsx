@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { proPriceLabel } from "@/config/site";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/client-api";
 
@@ -40,7 +41,7 @@ function RedirectButton({
 }
 
 export function UpgradeButton() {
-  return <RedirectButton endpoint="/api/stripe/checkout" label="Upgrade to Pro — €9/mo" />;
+  return <RedirectButton endpoint="/api/stripe/checkout" label={`Upgrade to Pro — ${proPriceLabel()}`} />;
 }
 
 export function ManageBillingButton() {

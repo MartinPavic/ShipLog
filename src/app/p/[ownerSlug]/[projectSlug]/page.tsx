@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { siteConfig } from "@/config/site";
 import { Markdown } from "@/components/markdown";
 import { formatDate } from "@/lib/format";
 import { getPublicChangelog } from "@/lib/public";
@@ -71,7 +72,7 @@ export default async function PublicChangelogPage({
         </nav>
       )}
 
-      <footer className="text-xs text-muted-foreground">Made with ShipLog</footer>
+      {siteConfig.publicFooter && <footer className="text-xs text-muted-foreground">Made with {siteConfig.name}</footer>}
     </main>
   );
 }

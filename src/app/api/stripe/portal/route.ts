@@ -5,9 +5,11 @@ import { billingAccounts } from "@/db/schema";
 import { ApiError, handle } from "@/lib/api";
 import { appUrl } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/owner";
+import { assertFeatureEnabled } from "@/lib/plans";
 import { stripe } from "@/lib/stripe";
 
 export const POST = handle(async () => {
+  assertFeatureEnabled("billing");
   const owner = await requireAdmin();
   const [account] = await getDb()
     .select({ customerId: billingAccounts.stripeCustomerId })

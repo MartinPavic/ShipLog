@@ -1,24 +1,70 @@
 import Link from "next/link";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { UpgradeButton } from "@/components/upgrade-button";
+import { siteConfig } from "@/config/site";
+import { features } from "@/env";
+import { planHighlights, type Plan } from "@/lib/plans";
+
+function PlanCard({ plan, name, price, highlighted }: { plan: Plan; name: string; price: React.ReactNode; highlighted?: boolean }) {
+  return (
+    <div className={`flex w-72 flex-col rounded-lg border p-6 ${highlighted ? "border-primary" : ""}`}>
+      <div className="mb-1 font-semibold">{name}</div>
+      <div className="mb-3 text-2xl font-bold">{price}</div>
+      <ul className="mb-6 space-y-1 text-sm text-muted-foreground">
+        {planHighlights(plan).map((line) => (
+          <li key={line}>• {line}</li>
+        ))}
+      </ul>
+      <div className="mt-auto">
+        <Show when="signed-out">
+          <SignInButton mode="modal">
+            <Button variant={highlighted ? "default" : "outline"} className="w-full">
+              {highlighted ? "Upgrade to Pro" : "Get started"}
+            </Button>
+          </SignInButton>
+        </Show>
+        <Show when="signed-in">
+          {highlighted ? (
+            <UpgradeButton />
+          ) : (
+            <Link href="/dashboard">
+              <Button variant="outline" className="w-full">
+                Go to Dashboard
+              </Button>
+            </Link>
+          )}
+        </Show>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
+  const { currency, pro } = siteConfig.pricing;
+  const showPricing = features().billing;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
+    <div className="flex min-h-screen flex-col">
       <header className="border-b">
         <div className="container mx-auto flex h-14 items-center justify-between px-4">
-          <span className="font-semibold text-lg">ShipLog</span>
+          <Link href="/" className="text-lg">
+            <Brand />
+          </Link>
           <div className="flex items-center gap-4">
             <Show when="signed-out">
               <SignInButton mode="modal">
-                <Button variant="ghost" size="sm">Sign in</Button>
+                <Button variant="ghost" size="sm">
+                  Sign in
+                </Button>
               </SignInButton>
             </Show>
             <Show when="signed-in">
               <Link href="/dashboard">
-                <Button variant="ghost" size="sm">Dashboard</Button>
+                <Button variant="ghost" size="sm">
+                  Dashboard
+                </Button>
               </Link>
               <UserButton />
             </Show>
@@ -26,122 +72,89 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero */}
       <main className="flex-1">
-        <section className="container mx-auto px-4 py-20 md:py-28 text-center">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 max-w-3xl mx-auto">
-            Stop writing weekly updates.
+        <section className="container mx-auto px-4 py-20 text-center md:py-28">
+          <h1 className="mx-auto mb-6 max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
+            {siteConfig.tagline}
             <br />
-            <span className="text-muted-foreground">Generate them from your commits.</span>
+            <span className="text-muted-foreground">{siteConfig.taglineMuted}</span>
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            ShipLog turns your GitHub activity into clean, professional progress reports in seconds.
-            Perfect for indie hackers, solo founders, and small teams.
-          </p>
-
+          <p className="mx-auto mb-10 max-w-2xl text-lg text-muted-foreground md:text-xl">{siteConfig.description}</p>
           <Show when="signed-out">
             <SignInButton mode="modal">
-              <Button size="lg" className="text-base px-8">
+              <Button size="lg" className="px-8 text-base">
                 Get started free
               </Button>
             </SignInButton>
           </Show>
           <Show when="signed-in">
-            <Link href="/dashboard/ship-log">
-              <Button size="lg" className="text-base px-8">
-                Generate a Ship Log
+            <Link href="/dashboard">
+              <Button size="lg" className="px-8 text-base">
+                Go to Dashboard
               </Button>
             </Link>
           </Show>
         </section>
 
-        {/* Features */}
         <section className="border-t bg-muted/30">
-          <div className="container mx-auto px-4 py-16 grid md:grid-cols-3 gap-8">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-lg">Connect GitHub</h3>
-              <p className="text-muted-foreground text-sm">
-                Paste a personal access token. We only read your commits — nothing else.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-semibold text-lg">AI writes the report</h3>
-              <p className="text-muted-foreground text-sm">
-                Your own OpenAI, Anthropic or Grok key turns raw commits into a clear weekly update.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-semibold text-lg">Copy & ship</h3>
-              <p className="text-muted-foreground text-sm">
-                One click to copy a polished progress report for investors, team or Twitter.
-              </p>
-            </div>
+          <div className="container mx-auto grid gap-8 px-4 py-16 md:grid-cols-3">
+            {siteConfig.features.map((feature) => (
+              <div key={feature.title} className="space-y-2">
+                <h2 className="text-lg font-semibold">{feature.title}</h2>
+                <p className="text-sm text-muted-foreground">{feature.body}</p>
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* Pricing teaser */}
-        {/* Pricing */}
-        <section className="container mx-auto px-4 py-16 text-center">
-          <h2 className="text-2xl font-bold mb-4">Simple pricing</h2>
-          <p className="text-muted-foreground mb-8">
-            Free to try. Pro unlocks unlimited generations and history.
-          </p>
-
-          <div className="inline-flex flex-col sm:flex-row gap-6 text-left justify-center items-stretch">
-            {/* Free plan */}
-            <div className="border rounded-lg p-6 w-64 flex flex-col">
-              <div className="font-semibold mb-1">Free</div>
-              <div className="text-2xl font-bold mb-3">€0</div>
-              <ul className="text-sm text-muted-foreground space-y-1 mb-6">
-                <li>• 5 generations / month</li>
-                <li>• Basic history</li>
-              </ul>
-              <Show when="signed-out">
-                <SignInButton mode="modal">
-                  <Button variant="outline" className="w-full mt-auto">
-                    Get started
-                  </Button>
-                </SignInButton>
-              </Show>
-              <Show when="signed-in">
-                <Link href="/dashboard" className="mt-auto">
-                  <Button variant="outline" className="w-full">
-                    Go to Dashboard
-                  </Button>
-                </Link>
-              </Show>
+        {showPricing && (
+          <section className="container mx-auto px-4 py-16 text-center">
+            <h2 className="mb-4 text-2xl font-bold">Simple pricing</h2>
+            <p className="mb-8 text-muted-foreground">Free to try. Pro unlocks the full history, managed AI and automation.</p>
+            <div className="flex flex-col items-stretch justify-center gap-6 text-left sm:flex-row">
+              <PlanCard plan="free" name="Free" price={`${currency}0`} />
+              <PlanCard
+                plan="pro"
+                name="Pro"
+                highlighted
+                price={
+                  <>
+                    {currency}
+                    {pro.price}
+                    <span className="text-sm font-normal">/{pro.interval}</span>
+                  </>
+                }
+              />
             </div>
+          </section>
+        )}
 
-            {/* Pro plan */}
-            <div className="border rounded-lg p-6 w-64 border-primary relative flex flex-col">
-              <div className="font-semibold mb-1">Pro</div>
-              <div className="text-2xl font-bold mb-3">
-                €9<span className="text-sm font-normal">/mo</span>
-              </div>
-              <ul className="text-sm text-muted-foreground space-y-1 mb-6">
-                <li>• Unlimited generations</li>
-                <li>• Full history</li>
-                <li>• Priority support</li>
-              </ul>
-
-              <Show when="signed-out">
-                <SignInButton mode="modal">
-                  <Button className="w-full mt-auto">Upgrade to Pro</Button>
-                </SignInButton>
-              </Show>
-
-              <Show when="signed-in">
-                <div className="mt-auto">
-                  <UpgradeButton />
-                </div>
-              </Show>
-            </div>
+        <section className="container mx-auto max-w-2xl px-4 py-16">
+          <h2 className="mb-6 text-center text-2xl font-bold">Questions</h2>
+          <div className="divide-y rounded-lg border">
+            {siteConfig.faq.map((item) => (
+              <details key={item.q} className="group p-4">
+                <summary className="cursor-pointer font-medium">{item.q}</summary>
+                <p className="mt-2 text-sm text-muted-foreground">{item.a}</p>
+              </details>
+            ))}
           </div>
         </section>
       </main>
 
       <footer className="border-t py-6 text-center text-sm text-muted-foreground">
-        ShipLog — built for builders who hate writing status updates.
+        <nav className="mb-2 flex justify-center gap-4">
+          <Link href="/terms" className="hover:text-foreground">
+            Terms
+          </Link>
+          <Link href="/privacy" className="hover:text-foreground">
+            Privacy
+          </Link>
+          <a href={`mailto:${siteConfig.supportEmail}`} className="hover:text-foreground">
+            Contact
+          </a>
+        </nav>
+        <p>© {new Date().getFullYear()} {siteConfig.legal.companyName}</p>
       </footer>
     </div>
   );

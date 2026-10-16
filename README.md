@@ -58,8 +58,40 @@ npm run dev                  # http://localhost:3000
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth app. |
 | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For billing | Stripe keys, the Pro price and the webhook signing secret. |
 | `OPENAI_API_KEY` | For managed AI | Server-side key used for Pro accounts without their own key. |
-| `RESEND_API_KEY`, `RESEND_FROM` | For email | Email delivery and scheduled-run notifications, e.g. `ShipLog <noreply@yourdomain.com>`. |
-| `CRON_SECRET` | For schedules | Bearer token that guards `/api/cron/scheduled-logs`. The endpoint refuses to run without it. |
+| `RESEND_API_KEY`, `RESEND_FROM` | For email | Email delivery and scheduled-run notifications, e.g. `Your App <noreply@yourdomain.com>`. |
+| `CRON_SECRET` | For schedules | Bearer token (16+ characters) that guards `/api/cron/scheduled-logs`. The endpoint refuses to run without it. |
+| `BILLING_ENABLED`, `MANAGED_AI_ENABLED`, `TEAMS_ENABLED`, `SCHEDULING_ENABLED`, `DELIVERY_ENABLED` | No | Feature flags, see below. All default to on. |
+| `AI_PROVIDER` | No | `mock` replaces every AI call with an offline placeholder generator. Default `live`. |
+
+The variables each enabled feature needs are checked when the server starts. In production a missing or malformed
+value stops the server and lists every problem at once; in development it only prints a warning. The rules are in
+[`src/env.ts`](src/env.ts).
+
+### Feature flags
+
+A flag set to `false` (or `0`, `off`, `no`) switches the feature off everywhere: the UI hides it, the API refuses it,
+and the pricing section stops advertising it. Flags can only switch things off; they never grant what a plan lacks.
+
+| Flag | When off |
+| --- | --- |
+| `BILLING_ENABLED` | No paywall: every workspace gets the Pro features without caps. Stripe routes return 404, billing UI and pricing are hidden, no Stripe keys are required. |
+| `MANAGED_AI_ENABLED` | The server's `OPENAI_API_KEY` is never used; everyone brings their own key. |
+| `TEAMS_ENABLED` | Everyone works in a personal workspace and the organization switcher is hidden. |
+| `SCHEDULING_ENABLED` | No scheduled logs; the cron endpoint reports that it skipped. `CRON_SECRET` is not required. |
+| `DELIVERY_ENABLED` | Slack, Discord and email channels and "send now" are unavailable. |
+
+### Demo mode
+
+`AI_PROVIDER=mock` generates a deterministic placeholder log from the real GitHub activity, without calling any AI
+provider and without an API key. Usage limits still apply. Use it for demos and local testing.
+
+### Branding and copy
+
+Edit [`src/config/site.ts`](src/config/site.ts): name, tagline, description, support email, logo, brand colors,
+displayed price, landing-page features and FAQ, and the company details used by the Terms and Privacy pages. Those two
+pages are **templates** and show a notice until you replace the text and set `legal.reviewed` to `true`. The price shown
+is display only; the amount charged comes from your Stripe price (`STRIPE_PRICE_ID`). Plan limits live in
+[`src/lib/plans.ts`](src/lib/plans.ts).
 
 ## Setting up the services
 
@@ -163,6 +195,8 @@ Slack, Discord and Resend are always stubbed, so no test makes an external call.
 src/app/            routes: dashboard, public pages (/s, /p), API routes, error and loading boundaries
 src/components/     UI components (ui/ holds the shadcn primitives)
 src/db/             Drizzle schema and connection
+src/config/         branding, copy and pricing display (site.ts)
+src/env.ts          feature flags and environment validation
 src/lib/            domain logic: plans, usage, generation, github, delivery, scheduler, sharing, billing...
 src/lib/ai/         providers (streaming), templates, models, credential resolution
 drizzle/            generated SQL migrations

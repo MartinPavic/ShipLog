@@ -1,3 +1,4 @@
+import { siteConfig } from "@/config/site";
 import { and, count, desc, eq, gte, isNull, max } from "drizzle-orm";
 import { getDb } from "@/db";
 import { projects, shipLogs } from "@/db/schema";
@@ -18,7 +19,7 @@ export function buildOnboarding(input: { github: boolean; ai: boolean; firstProj
     {
       id: "github",
       title: "Connect GitHub",
-      description: "Let ShipLog read the commits, pull requests and releases of your repositories.",
+      description: `Let ${siteConfig.name} read the commits, pull requests and releases of your repositories.`,
       href: "/dashboard/settings",
       done: input.github,
     },
@@ -89,7 +90,7 @@ export async function getDashboardData(owner: { ownerId: string; userId: string 
     recentLogs: recent,
     onboarding: buildOnboarding({
       github: status.github !== null,
-      ai: status.ai !== null || status.managedAi,
+      ai: status.ai !== null || status.managedAi || status.demoAi,
       firstProjectId: projectRows[0]?.id ?? null,
       hasLog: totals.n > 0,
     }),

@@ -1,5 +1,6 @@
 "use client";
 
+import { siteConfig } from "@/config/site";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -66,7 +67,7 @@ export function GithubCard({ login, notice }: { login: string | null; notice: st
       <CardHeader>
         <CardTitle>GitHub</CardTitle>
         <CardDescription>
-          ShipLog reads commits, pull requests, issues and releases from your repositories.
+          {siteConfig.name} reads commits, pull requests, issues and releases from your repositories.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

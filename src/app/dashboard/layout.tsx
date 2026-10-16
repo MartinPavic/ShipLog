@@ -2,7 +2,9 @@ import { auth } from "@clerk/nextjs/server";
 import { UserButton, OrganizationSwitcher } from "@clerk/nextjs";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Brand } from "@/components/brand";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { features } from "@/env";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { listProjects } from "@/lib/projects";
@@ -26,8 +28,8 @@ export default async function DashboardLayout({
       <header className="border-b print:hidden">
         <div className="container mx-auto flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="font-semibold">
-              ShipLog
+            <Link href="/dashboard">
+              <Brand />
             </Link>
             <nav className="flex gap-4 text-sm">
               <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
@@ -42,13 +44,15 @@ export default async function DashboardLayout({
             </nav>
           </div>
           <div className="flex items-center gap-4">
-            <OrganizationSwitcher
-              hidePersonal={false}
-              afterSelectOrganizationUrl="/dashboard"
-              afterSelectPersonalUrl="/dashboard"
-              afterCreateOrganizationUrl="/dashboard"
-              afterLeaveOrganizationUrl="/dashboard"
-            />
+            {features().teams && (
+              <OrganizationSwitcher
+                hidePersonal={false}
+                afterSelectOrganizationUrl="/dashboard"
+                afterSelectPersonalUrl="/dashboard"
+                afterCreateOrganizationUrl="/dashboard"
+                afterLeaveOrganizationUrl="/dashboard"
+              />
+            )}
             <ProjectSwitcher projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
             <UserButton />
           </div>

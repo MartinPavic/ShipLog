@@ -1,15 +1,17 @@
 import { ApiError } from "@/lib/api";
+import { mockLogText, streamMockLog } from "@/lib/ai/mock";
 import { PROVIDER_LABELS } from "@/lib/ai/models";
 import type { AiProvider } from "@/lib/validation";
 
-export type CompletionInput = {
-  provider: AiProvider;
+type BaseInput = {
   key: string;
   model: string;
   system?: string;
   prompt: string;
   signal?: AbortSignal;
 };
+type LiveInput = BaseInput & { provider: AiProvider };
+export type CompletionInput = LiveInput | (BaseInput & { provider: "mock" });
 
 const COMPLETE_TIMEOUT_MS = 60_000;
 const STREAM_TIMEOUT_MS = 180_000;
@@ -73,7 +75,7 @@ function buildRequest(
   };
 }
 
-async function request(input: CompletionInput, stream: boolean): Promise<Response> {
+async function request(input: LiveInput, stream: boolean): Promise<Response> {
   const { provider } = input;
   const label = PROVIDER_LABELS[provider];
   const timeout = AbortSignal.timeout(stream ? STREAM_TIMEOUT_MS : COMPLETE_TIMEOUT_MS);
@@ -104,6 +106,7 @@ function extractText(provider: AiProvider, data: unknown): string {
 }
 
 export async function complete(input: CompletionInput): Promise<string> {
+  if (input.provider === "mock") return mockLogText(input.prompt);
   const res = await request(input, false);
   const text = extractText(input.provider, await res.json()).trim();
   if (!text) {
@@ -191,6 +194,7 @@ async function* readTextDeltas(provider: AiProvider, body: ReadableStream<Uint8A
 
 // Connects and checks the status eagerly so callers can still return a proper HTTP error.
 export async function openCompletionStream(input: CompletionInput): Promise<AsyncGenerator<string>> {
+  if (input.provider === "mock") return streamMockLog(input.prompt, input.signal);
   const res = await request(input, true);
   if (!res.body) {
     throw new ApiError(502, `${PROVIDER_LABELS[input.provider]} sent an empty response. Try again.`, "AI_EMPTY");

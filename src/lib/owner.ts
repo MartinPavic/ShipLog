@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { features } from "@/env";
 import { ApiError } from "@/lib/api";
 
 export type Owner = {
@@ -11,7 +12,9 @@ export type Owner = {
 export async function getOwner(): Promise<Owner> {
   const { userId, orgId, orgRole } = await auth();
   if (!userId) throw new ApiError(401, "Unauthorized");
-  return { userId, orgId: orgId ?? null, ownerId: orgId ?? userId, orgRole: orgRole ?? null };
+  // With teams off, everyone stays in their personal workspace even if Clerk reports an organization.
+  const org = features().teams ? (orgId ?? null) : null;
+  return { userId, orgId: org, ownerId: org ?? userId, orgRole: org ? (orgRole ?? null) : null };
 }
 
 // Personal workspaces have no org role and are always admin of themselves.
