@@ -17,7 +17,7 @@ vi.mock("@clerk/nextjs", () => ({
   ClerkProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
-vi.mock("next/font/google", () => ({ Inter: () => ({ className: "" }) }));
+vi.mock("next/font/google", () => ({ Inter: () => ({ variable: "" }), Fraunces: () => ({ variable: "" }) }));
 
 // A buyer changes only src/config/site.ts. Nothing the product renders may still say the old name.
 const ORIGINAL = { name: siteConfig.name, description: siteConfig.description };
