@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ThemeProvider } from "@/components/theme-provider";
 import { siteConfig } from "@/config/site";
 import { appUrl } from "@/lib/app-url";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-display" });
 
 const title = `${siteConfig.name} — ${siteConfig.tagline} ${siteConfig.taglineMuted}`;
 
@@ -33,9 +36,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
-      <html lang="en" suppressHydrationWarning style={brandStyle()}>
-        <body className={`${inter.className} antialiased`}>{children}</body>
+    <ClerkProvider appearance={clerkAppearance}>
+      <html lang="en" suppressHydrationWarning className={`${inter.variable} ${fraunces.variable}`} style={brandStyle()}>
+        <body className="antialiased">
+          <ThemeProvider>{children}</ThemeProvider>
+        </body>
       </html>
     </ClerkProvider>
   );
