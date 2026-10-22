@@ -15,8 +15,20 @@ Everything user-facing that names the product lives in [`src/config/site.ts`](..
 | `features`, `faq` | Landing page sections. |
 | `legal` | Company details for the Terms and Privacy pages. |
 
-The Open Graph image is generated from the same file (`src/app/opengraph-image.tsx`). For deeper theming edit the
-CSS variables in `src/app/globals.css`.
+The Open Graph image is generated from the same file (`src/app/opengraph-image.tsx`).
+
+## Theme
+
+The default look is a captain's log: parchment, ink-navy and brass, with a deep-sea dark mode (toggle in the headers,
+follows the system setting by default).
+
+- **Colors:** CSS variables in `src/app/globals.css` (`:root` for light, `.dark` for dark). Besides the shadcn tokens
+  there are `--success`, `--warning`, `--danger` and `--brass`. `brand.primary` still overrides `--primary`.
+- **Fonts:** Fraunces for headings (`--font-display`) and Inter for body text, both loaded in `src/app/layout.tsx`.
+- **Logo:** the ship's wheel in `src/components/nautical/ship-wheel.tsx` is used when `logo` is `null`; the favicon is
+  `src/app/icon.svg`. Setting `logo` replaces the wheel in the UI.
+- **Clerk widgets:** `src/lib/clerk-appearance.ts` maps Clerk's variables onto the same tokens, so they follow dark mode.
+- **Emails:** `src/lib/email-template.ts` wraps outgoing emails; it uses inline hex colors because email clients ignore CSS variables.
 
 The Terms (`/terms`) and Privacy (`/privacy`) pages are **templates**. Replace their text with your own, reviewed by a
 lawyer, then set `legal.reviewed` to `true` to remove the notice banner.
