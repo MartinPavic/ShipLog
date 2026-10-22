@@ -66,6 +66,7 @@ See also the [changelog](CHANGELOG.md) and [third-party notices](THIRD_PARTY_NOT
 | `npm run db:generate` / `db:migrate` | Drizzle migrations. |
 | `npm run licenses` | Regenerates the third-party notices and fails on any license that doesn't allow redistribution. |
 | `npm run migrate:clerk -- [--dry-run]` | One-time move of secrets, plan and logs from old Clerk metadata into the database. Only needed by installs that predate the database. |
+| `npm run scan:secrets` | Fails if staged files (`-- --all`: every tracked file) contain credentials. Enable the commit hook once with `git config core.hooksPath .githooks`. |
 
 ## Stack
 

@@ -12,6 +12,8 @@ const EXCLUDED_PREFIXES = [
   "scripts/package-release.ts",
   "scripts/lib/release.ts",
   "scripts/lib/release.test.ts",
+  "scripts/scan-secrets.ts",
+  ".githooks/",
   // Only relevant to the original hosted installation.
   "scripts/migrate-clerk-metadata.ts",
 ];
@@ -107,7 +109,7 @@ export function fillLicense(template: string, details: LicenseDetails, year: num
   return { text, unresolved: [...new Set([...unresolved, ...[...text.matchAll(/\{\{([A-Z_]+)\}\}/g)].map((m) => m[1])])] };
 }
 
-const SELLER_SCRIPTS = ["migrate:clerk", "release"];
+const SELLER_SCRIPTS = ["migrate:clerk", "release", "scan:secrets"];
 
 /** The buyer's package.json: no scripts for tooling that isn't shipped, and the license pointer. */
 export function transformPackageJson(raw: string): string {
@@ -120,7 +122,7 @@ export function transformPackageJson(raw: string): string {
 export function stripMigrateClerk(readme: string): string {
   return readme
     .split("\n")
-    .filter((line) => !line.includes("migrate:clerk"))
+    .filter((line) => !line.includes("migrate:clerk") && !line.includes("scan:secrets"))
     .join("\n");
 }
 
