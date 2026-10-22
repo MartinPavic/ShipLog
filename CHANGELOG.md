@@ -5,6 +5,12 @@ follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- Captain's-log redesign: parchment, ink and brass theme with a dark mode toggle, serif headings, ship's wheel logo and
+  favicon, wave dividers on the landing page, themed Clerk sign-in/up, Open Graph image and emails.
+- Status colors use `--success`, `--warning` and `--danger` tokens; a few empty states and the 404 got nautical copy.
+
 ## [1.0.0] - unreleased
 
 First release.
