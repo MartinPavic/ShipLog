@@ -97,11 +97,11 @@ export function DeliverPanel({
           </>
         )}
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
         {results && (
           <ul className="space-y-1 text-sm">
             {results.map((r) => (
-              <li key={r.channelId} className={r.status === "sent" ? "text-muted-foreground" : "text-red-500"}>
+              <li key={r.channelId} className={r.status === "sent" ? "text-muted-foreground" : "text-danger"}>
                 {LABEL[r.kind] ?? r.kind}: {r.status === "sent" ? "sent" : `failed — ${r.error}`}
               </li>
             ))}
@@ -115,7 +115,7 @@ export function DeliverPanel({
               {history.map((h) => (
                 <li key={h.id}>
                   {formatDateTime(h.sentAt)} · {LABEL[h.kind] ?? h.kind} ·{" "}
-                  <span className={h.status === "failed" ? "text-red-500" : ""}>
+                  <span className={h.status === "failed" ? "text-danger" : ""}>
                     {h.status}
                     {h.error ? ` — ${h.error}` : ""}
                   </span>

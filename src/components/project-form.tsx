@@ -166,7 +166,7 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
           {loading ? "Loading..." : "Browse my GitHub repositories"}
         </Button>
       )}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {loaded && (
         <div className="space-y-2 rounded-lg border p-3">
@@ -378,7 +378,7 @@ function ScheduleCard({
             >
               Run scheduled logs as me
             </Button>
-            {takeError && <p className="text-sm text-red-500">{takeError}</p>}
+            {takeError && <p className="text-sm text-danger">{takeError}</p>}
           </div>
         )}
       </CardContent>
@@ -554,7 +554,7 @@ export function ProjectForm(props: Props) {
           {loading ? "Saving..." : props.mode === "create" ? "Create project" : "Save changes"}
         </Button>
         {message && (
-          <p className={`text-sm ${message.error ? "text-red-500" : "text-muted-foreground"}`}>{message.text}</p>
+          <p className={`text-sm ${message.error ? "text-danger" : "text-muted-foreground"}`}>{message.text}</p>
         )}
       </div>
     </form>

@@ -29,7 +29,7 @@ export function ArchiveProjectButton({ projectId }: { projectId: string }) {
       <Button variant="outline" disabled={busy} onClick={archive}>
         {busy ? "Archiving..." : "Archive project"}
       </Button>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
 }

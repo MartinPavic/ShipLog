@@ -148,7 +148,7 @@ export function LogViewer({
           </div>
           {error && (
             <div className="space-y-2">
-              <p className="text-sm text-red-500">{error}</p>
+              <p className="text-sm text-danger">{error}</p>
               {limitReached && <UpgradeButton />}
             </div>
           )}

@@ -54,7 +54,7 @@ export function ExportMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       {note && (
-        <span role="status" className={`text-xs ${note.error ? "text-red-500" : "text-muted-foreground"}`}>
+        <span role="status" className={`text-xs ${note.error ? "text-danger" : "text-muted-foreground"}`}>
           {note.text}
         </span>
       )}
