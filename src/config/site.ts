@@ -4,8 +4,8 @@
 
 export const siteConfig = {
   name: "ShipLog",
-  tagline: "Stop writing weekly updates.",
-  taglineMuted: "Generate them from your commits.",
+  tagline: "Keep the captain's log.",
+  taglineMuted: "Let your commits write it.",
   description:
     "ShipLog turns your GitHub commits, pull requests and releases into clean weekly updates, changelogs and client reports.",
   // Shown in the footer and in places where a person may need to reach you.
