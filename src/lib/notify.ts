@@ -2,6 +2,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { siteConfig } from "@/config/site";
 import { appUrl } from "@/lib/app-url";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
+import { emailLayout } from "@/lib/email-template";
 
 async function getUserEmail(userId: string): Promise<string | null> {
   const user = await (await clerkClient()).users.getUser(userId);
@@ -21,7 +22,9 @@ export async function notifyProjectCreator(userId: string, project: { id: string
       to: [to],
       subject: `${siteConfig.name}: scheduled log for ${project.name} was skipped`,
       text: `The scheduled ship log for "${project.name}" was skipped.\n\n${reason}\n\nFix it here: ${link}`,
-      html: `<p>The scheduled ship log for <strong>${escapeHtml(project.name)}</strong> was skipped.</p><p>${escapeHtml(reason)}</p><p><a href="${link}">Open project settings</a></p>`,
+      html: emailLayout(
+        `<p>The scheduled ship log for <strong>${escapeHtml(project.name)}</strong> was skipped.</p><p>${escapeHtml(reason)}</p><p><a href="${link}" style="color:#7a5a1a;">Open project settings</a></p>`
+      ),
     });
   } catch (err) {
     console.error("Could not send scheduling notification:", err);
