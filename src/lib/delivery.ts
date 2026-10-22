@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { isEmailConfigured, sendEmail } from "@/lib/email";
 import { toHtml, toSlackMrkdwn } from "@/lib/export";
+import { emailLayout } from "@/lib/email-template";
 import { isAllowedWebhook, webhookHint } from "@/lib/webhooks";
 import type { CreateChannelInput } from "@/lib/validation";
 
@@ -56,7 +57,7 @@ export async function sendMessage(kind: ChannelKind, config: ChannelConfig, mess
         to: (config as { recipients: string[] }).recipients,
         subject: message.title,
         text: message.markdown,
-        html: `<h1>${message.title.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</h1>${body}`,
+        html: emailLayout(`<h1 style="margin:0 0 16px;font-size:24px;">${message.title.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</h1>${body}`),
       });
     } catch (err) {
       throw new DeliveryError(err instanceof Error ? err.message : "Could not send the email.");
