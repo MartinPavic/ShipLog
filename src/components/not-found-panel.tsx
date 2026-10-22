@@ -2,8 +2,8 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 
 export function NotFoundPanel({
-  title = "Page not found",
-  message = "We couldn't find what you were looking for. It may have been moved or deleted.",
+  title = "Lost at sea",
+  message = "This page has drifted off the chart. It may have been moved or deleted.",
   href,
   label,
 }: {
