@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { Markdown } from "@/components/markdown";
+import { ShipWheel } from "@/components/nautical/ship-wheel";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { formatDate } from "@/lib/format";
 import { getPublicChangelog } from "@/lib/public";
 
@@ -33,15 +35,22 @@ export default async function PublicChangelogPage({
 
   return (
     <main className="container mx-auto max-w-3xl space-y-10 px-4 py-12">
-      <header className="space-y-1">
-        <h1 className="text-3xl font-bold">{project.name}</h1>
-        {project.description && <p className="text-muted-foreground">{project.description}</p>}
+      <header className="flex items-start justify-between gap-4 border-b-2 border-double border-brass/60 pb-6">
+        <div className="space-y-1">
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            <ShipWheel className="size-4 text-brass" />
+            Ship&apos;s log
+          </p>
+          <h1 className="text-3xl font-bold">{project.name}</h1>
+          {project.description && <p className="text-muted-foreground">{project.description}</p>}
+        </div>
+        <ThemeToggle />
       </header>
 
-      {entries.length === 0 && <p className="text-muted-foreground">Nothing has been published yet.</p>}
+      {entries.length === 0 && <p className="text-muted-foreground">No entries in the log yet.</p>}
 
       {entries.map((entry) => (
-        <article key={entry.id} id={entry.id} className="space-y-3 border-t pt-6">
+        <article key={entry.id} id={entry.id} className="space-y-3 border-t border-dashed pt-6">
           <header>
             <h2 className="text-xl font-semibold">{entry.title}</h2>
             {entry.publishedAt && <p className="text-sm text-muted-foreground">{formatDate(entry.publishedAt)}</p>}
