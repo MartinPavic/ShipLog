@@ -132,7 +132,7 @@ export function ChannelsManager({
               )}
             </div>
           ))}
-          {note && <p className={`text-sm ${note.error ? "text-red-500" : "text-muted-foreground"}`}>{note.text}</p>}
+          {note && <p className={`text-sm ${note.error ? "text-danger" : "text-muted-foreground"}`}>{note.text}</p>}
         </CardContent>
       </Card>
 

@@ -41,7 +41,7 @@ function useAction() {
 function Feedback({ message }: { message: { text: string; error: boolean } | null }) {
   if (!message) return null;
   return (
-    <p className={`text-sm ${message.error ? "text-red-500" : "text-muted-foreground"}`}>
+    <p className={`text-sm ${message.error ? "text-danger" : "text-muted-foreground"}`}>
       {message.text}
     </p>
   );

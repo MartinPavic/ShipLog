@@ -49,7 +49,7 @@ describe("UsageMeter", () => {
   it("turns red and caps at 100% when the limit is reached or exceeded", () => {
     const html = renderToStaticMarkup(<UsageMeter used={9} limit={5} />);
     expect(html).toContain("width:100%");
-    expect(html).toContain("bg-red-500");
+    expect(html).toContain("bg-danger");
   });
 
   it("shows a plain count when there is no limit, and survives a zero limit", () => {

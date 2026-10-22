@@ -194,7 +194,7 @@ export function ProjectGenerate({
 
           {error && (
             <div className="space-y-3">
-              <p className="text-sm text-red-500">{error}</p>
+              <p className="text-sm text-danger">{error}</p>
               {limitReached && <UpgradeButton />}
             </div>
           )}

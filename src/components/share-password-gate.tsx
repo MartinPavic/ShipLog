@@ -40,7 +40,7 @@ export function SharePasswordGate({ token }: { token: string }) {
       <Button type="submit" disabled={busy || !password}>
         {busy ? "Checking..." : "View"}
       </Button>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </form>
   );
 }

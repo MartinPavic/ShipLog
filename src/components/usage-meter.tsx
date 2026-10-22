@@ -18,7 +18,7 @@ export function UsageMeter({ used, limit }: { used: number; limit: number | null
         aria-valuemax={limit}
         className="h-1.5 w-48 overflow-hidden rounded-full bg-muted"
       >
-        <div className={`h-full ${pct >= 100 ? "bg-red-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full ${pct >= 100 ? "bg-danger" : "bg-primary"}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

@@ -13,9 +13,9 @@ const components: Components = {
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
+    <blockquote className="border-l-2 border-brass pl-3 italic text-muted-foreground">{children}</blockquote>
   ),
-  pre: ({ children }) => <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">{children}</pre>,
+  pre: ({ children }) => <pre className="overflow-x-auto rounded-md border bg-secondary p-3 text-xs">{children}</pre>,
   code: ({ className, children }) =>
     className ? (
       <code className={className}>{children}</code>
