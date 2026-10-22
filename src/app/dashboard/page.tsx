@@ -61,7 +61,7 @@ export default async function DashboardPage({
       </div>
 
       {success && (
-        <p role="status" className="rounded-lg border border-green-600/30 bg-green-600/5 p-4 text-sm">
+        <p role="status" className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm">
           {plan === "pro"
             ? "You're on Pro. Thanks for subscribing!"
             : "Payment received. Your Pro plan activates in a moment; refresh this page in a few seconds."}
@@ -113,7 +113,7 @@ export default async function DashboardPage({
           </Link>
         </div>
         {recentLogs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing generated yet.</p>
+          <p className="text-sm text-muted-foreground">The log is still blank. Nothing generated yet.</p>
         ) : (
           <ul className="divide-y rounded-lg border">
             {recentLogs.map((log) => (

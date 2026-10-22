@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { Markdown } from "@/components/markdown";
 import { SharePasswordGate } from "@/components/share-password-gate";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { formatDate } from "@/lib/format";
 import { getSharedLog } from "@/lib/public";
 import { ACCESS_COOKIE, verifyAccess } from "@/lib/share";
@@ -31,12 +32,15 @@ export default async function SharedLogPage({ params }: { params: Promise<{ toke
 
   return (
     <main className="container mx-auto max-w-3xl space-y-6 px-4 py-12">
-      <header className="space-y-1">
-        <p className="text-sm text-muted-foreground">{log.projectName}</p>
-        <h1 className="text-2xl font-bold">{log.title}</h1>
-        <p className="text-sm text-muted-foreground">
-          {formatDate(log.periodStart)} – {formatDate(log.periodEnd)}
-        </p>
+      <header className="flex items-start justify-between gap-4 border-b-2 border-double border-brass/60 pb-6">
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">{log.projectName}</p>
+          <h1 className="text-2xl font-bold">{log.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {formatDate(log.periodStart)} – {formatDate(log.periodEnd)}
+          </p>
+        </div>
+        <ThemeToggle />
       </header>
       <Markdown>{log.content}</Markdown>
       {siteConfig.publicFooter && (

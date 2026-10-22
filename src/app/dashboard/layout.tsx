@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Brand } from "@/components/brand";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { features } from "@/env";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
@@ -25,7 +26,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b print:hidden">
+      <header className="border-b-2 border-double border-brass/60 bg-sidebar print:hidden">
         <div className="container mx-auto flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-6">
             <Link href="/dashboard">
@@ -54,12 +55,13 @@ export default async function DashboardLayout({
               />
             )}
             <ProjectSwitcher projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
+            <ThemeToggle />
             <UserButton />
           </div>
         </div>
       </header>
       {freeOrg && (
-        <div role="status" className="border-b bg-yellow-500/5 print:hidden">
+        <div role="status" className="border-b bg-warning/10 print:hidden">
           <p className="container mx-auto px-4 py-2 text-sm">
             This organization is on the Free plan. Teams are a Pro feature:{" "}
             {isAdmin(owner) ? (
