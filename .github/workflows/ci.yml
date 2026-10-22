@@ -52,6 +52,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Secret scan
+        run: npm run scan:secrets -- --all
+
       - name: Environment check
         run: npm run setup -- --check --production --db
 

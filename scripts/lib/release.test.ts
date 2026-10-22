@@ -19,6 +19,7 @@ describe("isExcluded", () => {
     for (const path of [
       ".git/config", ".next/server/x.js", "node_modules/x/index.js", "dist/a.zip", "release/config.json", "PLAN.md",
       "scripts/package-release.ts", "scripts/lib/release.ts", "scripts/lib/release.test.ts", "scripts/migrate-clerk-metadata.ts",
+      "scripts/scan-secrets.ts", ".githooks/pre-commit",
       ".env", ".env.local", ".env.production", "sub/.env.local", ".DS_Store", "tsconfig.tsbuildinfo", "./PLAN.md",
     ]) {
       expect(isExcluded(path), path).toBe(true);
@@ -137,7 +138,7 @@ describe("fillLicense", () => {
 
 describe("package transformations", () => {
   it("removes seller-only scripts and adds the license pointer, leaving the rest alone", () => {
-    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: "x", scripts: { dev: "next dev", "migrate:clerk": "a", release: "b" }, dependencies: { next: "1" } })));
+    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: "x", scripts: { dev: "next dev", "migrate:clerk": "a", release: "b", "scan:secrets": "c" }, dependencies: { next: "1" } })));
     expect(out).toEqual({ name: "x", scripts: { dev: "next dev" }, dependencies: { next: "1" }, license: "SEE LICENSE IN LICENSE.md" });
   });
 

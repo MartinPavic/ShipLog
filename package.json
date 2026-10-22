@@ -15,6 +15,7 @@
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
     "licenses": "tsx scripts/licenses.ts",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
     "release": "tsx scripts/package-release.ts"
   },
   "dependencies": {
