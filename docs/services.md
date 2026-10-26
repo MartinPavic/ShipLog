@@ -78,14 +78,17 @@ Variable: `OPENAI_API_KEY`.
 
 ## Scheduled logs (cron)
 
-`vercel.json` calls `/api/cron/scheduled-logs` every hour. Set `CRON_SECRET` on your host; Vercel sends it as a Bearer
-token automatically. On another host, call the endpoint hourly yourself:
+`vercel.json` calls `/api/cron/scheduled-logs` once a day at 21:00 UTC, the most frequent schedule the Vercel Hobby plan
+allows. Set `CRON_SECRET` on your host; Vercel sends it as a Bearer token automatically. On another host, call the
+endpoint hourly yourself:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.example.com/api/cron/scheduled-logs
 ```
 
 A project's schedule becomes due on its chosen weekday from its chosen hour (in its timezone) until local midnight, runs
-once per week, and retries transient failures up to three times. Hourly cron jobs need a Vercel plan that allows them.
+once per week, and retries transient failures up to three times. With the daily cron, only projects whose due window
+includes 21:00 UTC fire, so a late chosen hour in a far-east timezone can be missed; on a Vercel Pro plan set the
+schedule back to `0 * * * *` for full hourly accuracy.
 
 Variable: `CRON_SECRET` (16 or more characters).
