@@ -7,13 +7,13 @@ import { ManageBillingButton, UpgradeButton } from "@/components/upgrade-button"
 import { UsageMeter } from "@/components/usage-meter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { TemplateId } from "@/lib/ai/templates";
 import { features } from "@/env";
 import { PROJECT_COOKIE } from "@/lib/constants";
 import { getDashboardData } from "@/lib/dashboard";
 import { formatRelative } from "@/lib/format";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { limitsFor } from "@/lib/plans";
+import { listTemplates } from "@/lib/templates";
 
 function Stat({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -36,7 +36,12 @@ export default async function DashboardPage({
 }) {
   const { success, canceled } = await searchParams;
   const owner = await getOwner();
-  const [user, data, cookieStore] = await Promise.all([currentUser(), getDashboardData(owner), cookies()]);
+  const [user, data, cookieStore, templates] = await Promise.all([
+    currentUser(),
+    getDashboardData(owner),
+    cookies(),
+    listTemplates(owner.ownerId),
+  ]);
 
   const { plan, stats, usage, projects, recentLogs, onboarding, setup } = data;
   const maxProjects = limitsFor(plan, owner.ownerId).maxProjects;
@@ -96,8 +101,9 @@ export default async function DashboardPage({
               id: p.id,
               name: p.name,
               defaultPeriodDays: p.defaultPeriodDays,
-              template: p.template as TemplateId,
+              template: p.template,
             }))}
+            templates={templates}
             initialProjectId={initialProject.id}
             usage={{ used: usage.used, limit: usage.limit }}
             setupMessage={setupMessage}

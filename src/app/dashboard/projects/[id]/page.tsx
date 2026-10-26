@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { TEMPLATES, type TemplateId } from "@/lib/ai/templates";
+import { templateLabel, type TemplateView } from "@/lib/ai/templates";
 import { formatDate } from "@/lib/format";
 import { listChannels } from "@/lib/delivery";
 import { isEmailConfigured } from "@/lib/email";
@@ -20,6 +20,7 @@ import { getPlanLimits } from "@/lib/plans";
 import { getProject } from "@/lib/projects";
 import { getLastRun } from "@/lib/scheduler";
 import { getSetupStatus } from "@/lib/settings";
+import { listTemplates } from "@/lib/templates";
 import { getUsageMeter } from "@/lib/usage";
 import { logListQuerySchema } from "@/lib/validation";
 
@@ -42,9 +43,11 @@ function historyHref(projectId: string, params: SearchParams, page: number) {
 function LogList({
   projectId,
   items,
+  templates,
 }: {
   projectId: string;
   items: Awaited<ReturnType<typeof listLogs>>["items"];
+  templates: TemplateView[];
 }) {
   return (
     <div className="space-y-3">
@@ -59,7 +62,7 @@ function LogList({
                 {log.status === "failed" && <Badge variant="destructive">Failed</Badge>}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                {TEMPLATES[log.template as TemplateId]?.label ?? log.template} · {formatDate(log.createdAt)}
+                {templateLabel(templates, log.template)} · {formatDate(log.createdAt)}
               </p>
             </CardHeader>
             <CardContent className="pt-0">
@@ -87,6 +90,7 @@ export default async function ProjectPage({
 
   const tab = TABS.find((t) => t.id === sp.tab)?.id ?? "overview";
   const { limits } = await getPlanLimits(owner.ownerId);
+  const templates = await listTemplates(owner.ownerId);
   const ownerSlug = tab === "settings" && project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
   const lastRun = tab === "settings" ? await getLastRun(project.id) : null;
 
@@ -116,12 +120,13 @@ export default async function ProjectPage({
           owner={owner}
           projectId={project.id}
           defaultDays={project.defaultPeriodDays}
-          defaultTemplate={project.template as TemplateId}
+          defaultTemplate={project.template}
+          templates={templates}
           limits={limits}
         />
       )}
 
-      {tab === "history" && <HistoryTab owner={owner} projectId={project.id} sp={sp} limits={limits} />}
+      {tab === "history" && <HistoryTab owner={owner} projectId={project.id} sp={sp} limits={limits} templates={templates} />}
 
       {tab === "delivery" && (
         <ChannelsManager
@@ -150,12 +155,13 @@ export default async function ProjectPage({
           )}
           <ProjectForm
             mode="edit"
+            templates={templates}
             projectId={project.id}
             initial={{
               name: project.name,
               description: project.description ?? "",
               repos: project.repos,
-              template: project.template as TemplateId,
+              template: project.template,
               tone: project.tone ?? "",
               audience: project.audience ?? "",
               customPrompt: project.customPrompt ?? "",
@@ -188,12 +194,14 @@ async function OverviewTab({
   projectId,
   defaultDays,
   defaultTemplate,
+  templates,
   limits,
 }: {
   owner: Awaited<ReturnType<typeof getOwner>>;
   projectId: string;
   defaultDays: number;
-  defaultTemplate: TemplateId;
+  defaultTemplate: string;
+  templates: TemplateView[];
   limits: Awaited<ReturnType<typeof getPlanLimits>>["limits"];
 }) {
   const [status, recent, usage] = await Promise.all([
@@ -213,6 +221,7 @@ async function OverviewTab({
         projectId={projectId}
         defaultDays={defaultDays}
         defaultTemplate={defaultTemplate}
+        templates={templates}
         setupMessage={setupMessage}
         usage={{ used: usage.used, limit: usage.limit }}
       />
@@ -224,7 +233,7 @@ async function OverviewTab({
               View all
             </Link>
           </div>
-          <LogList projectId={projectId} items={recent.items} />
+          <LogList projectId={projectId} items={recent.items} templates={templates} />
         </div>
       )}
     </div>
@@ -236,11 +245,13 @@ async function HistoryTab({
   projectId,
   sp,
   limits,
+  templates,
 }: {
   owner: Awaited<ReturnType<typeof getOwner>>;
   projectId: string;
   sp: SearchParams;
   limits: Awaited<ReturnType<typeof getPlanLimits>>["limits"];
+  templates: TemplateView[];
 }) {
   const parsed = logListQuerySchema.safeParse(sp);
   const query = parsed.success ? parsed.data : logListQuerySchema.parse({});
@@ -272,7 +283,7 @@ async function HistoryTab({
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No logs match.</p>
       ) : (
-        <LogList projectId={projectId} items={items} />
+        <LogList projectId={projectId} items={items} templates={templates} />
       )}
 
       {pages > 1 && (

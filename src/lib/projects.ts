@@ -4,6 +4,7 @@ import { projects, scheduledRuns, shipLogs, type ProjectRepo } from "@/db/schema
 import { ApiError } from "@/lib/api";
 import type { Owner } from "@/lib/owner";
 import { slugify } from "@/lib/slug";
+import { requireTemplate } from "@/lib/templates";
 import { uuidSchema, type CreateProjectInput, type UpdateProjectInput } from "@/lib/validation";
 
 export type Project = typeof projects.$inferSelect;
@@ -49,6 +50,7 @@ export async function requireProject(ownerId: string, id: string): Promise<Proje
 }
 
 export async function createProject(owner: Owner, input: CreateProjectInput, maxProjects: number) {
+  await requireTemplate(owner.ownerId, input.template);
   const db = getDb();
   return db.transaction(async (tx) => {
     // Serialise creates per owner so the plan limit can't be raced.
@@ -93,6 +95,7 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
 // The slug stays fixed on rename so public changelog URLs don't break.
 export async function updateProject(ownerId: string, id: string, patch: UpdateProjectInput): Promise<Project> {
   await requireProject(ownerId, id);
+  if (patch.template) await requireTemplate(ownerId, patch.template);
   const [row] = await getDb()
     .update(projects)
     .set({

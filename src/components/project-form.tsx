@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from "@/lib/ai/templates";
+import { type TemplateView } from "@/lib/ai/templates";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
 import { WEEKDAYS } from "@/lib/schedule";
 
@@ -40,7 +41,7 @@ export type ProjectFormValues = {
   name: string;
   description: string;
   repos: { fullName: string; branch?: string }[];
-  template: TemplateId;
+  template: string;
   tone: string;
   audience: string;
   customPrompt: string;
@@ -65,7 +66,6 @@ const EMPTY: ProjectFormValues = {
 type RepoSummary = { fullName: string; private: boolean; description: string | null };
 type Repo = ProjectFormValues["repos"][number];
 
-const TEMPLATE_ITEMS = Object.fromEntries(TEMPLATE_IDS.map((id) => [id, TEMPLATES[id].label]));
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo[]) => void }) {
@@ -386,7 +386,7 @@ function ScheduleCard({
   );
 }
 
-type Props =
+type Props = (
   | { mode: "create" }
   | {
       mode: "edit";
@@ -395,10 +395,12 @@ type Props =
       schedulingAllowed: boolean;
       lastRun: LastRun;
       canTakeOver: boolean;
-    };
+    }
+) & { templates: TemplateView[] };
 
 export function ProjectForm(props: Props) {
   const router = useRouter();
+  const templateItems = Object.fromEntries(props.templates.map((t) => [t.id, t.label]));
   const [values, setValues] = useState<ProjectFormValues>(props.mode === "edit" ? props.initial : EMPTY);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -469,21 +471,26 @@ export function ProjectForm(props: Props) {
             <Label>Template</Label>
             <Select
               value={values.template}
-              items={TEMPLATE_ITEMS}
-              onValueChange={(v) => v && set("template", v as TemplateId)}
+              items={templateItems}
+              onValueChange={(v) => v && set("template", v)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TEMPLATE_IDS.map((id) => (
-                  <SelectItem key={id} value={id}>
-                    {TEMPLATES[id].label}
+                {props.templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">{TEMPLATES[values.template].description}</p>
+            <p className="text-xs text-muted-foreground">
+              {props.templates.find((t) => t.id === values.template)?.description}{" "}
+              <Link href="/dashboard/templates" className="underline">
+                Manage templates
+              </Link>
+            </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

@@ -17,6 +17,28 @@ export const uuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Invalid id");
 
+// A built-in template id or the uuid of a custom template; ownership is checked where it is used.
+export const templateIdSchema = z.union([z.enum(TEMPLATE_IDS), uuidSchema]);
+
+const templateFields = {
+  name: z.string().trim().min(1, "Name is required").max(60),
+  description: z.string().trim().max(200),
+  instructions: z
+    .string()
+    .trim()
+    .min(20, "Describe what the template should write (at least 20 characters)")
+    .max(3000),
+};
+
+export const templateInputSchema = z.object({ ...templateFields, description: templateFields.description.default("") });
+export type TemplateInput = z.infer<typeof templateInputSchema>;
+
+// Built from the fields without defaults, so an omitted description is left alone rather than cleared.
+export const updateTemplateSchema = z
+  .object(templateFields)
+  .partial()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
+
 export const aiSettingsSchema = z.object({
   provider: z.enum(AI_PROVIDERS),
   apiKey: z.string().trim().min(8).max(500).optional(),
@@ -46,7 +68,7 @@ const projectFields = {
   name: z.string().trim().min(1, "Name is required").max(80),
   description: optionalText(500),
   repos: z.array(repoSchema).max(20),
-  template: z.enum(TEMPLATE_IDS),
+  template: templateIdSchema,
   tone: optionalText(100),
   audience: optionalText(200),
   customPrompt: optionalText(1000),
@@ -83,7 +105,7 @@ export const generateSchema = z
     // Inclusive calendar range; takes precedence over `days`.
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
-    template: z.enum(TEMPLATE_IDS).optional(),
+    template: templateIdSchema.optional(),
     regenerateLogId: uuidSchema.optional(),
   })
   .refine((v) => (v.from === undefined) === (v.to === undefined), "Provide both a start and an end date")
