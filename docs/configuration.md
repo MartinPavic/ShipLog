@@ -71,6 +71,6 @@ Database-backed and fixed in code:
 
 ## Other settings
 
-- `vercel.json`: the hourly cron schedule.
+- `vercel.json`: the cron schedule (daily by default, hourly on Vercel Pro).
 - `next.config.ts`: security headers. There is no Content-Security-Policy; adding one needs allowances for Clerk and Stripe.
 - `src/config/site.ts`: branding and copy, see [Customization](customization.md).
