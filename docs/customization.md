@@ -54,10 +54,20 @@ month per Pro workspace.
 
 ## Templates
 
-Templates are the report styles offered when generating (weekly update, changelog, standup, ...). To add one, edit
-[`src/lib/ai/templates.ts`](../src/lib/ai/templates.ts): add its id to `TEMPLATE_IDS` and an entry to `TEMPLATES` with a
-`label`, a `description` and the `instructions` given to the model. Validation, the project form, the generate form
-and log titles all derive from these two constants. The id is stored as text, so no migration is needed.
+Templates are the report styles offered when generating (weekly update, changelog, standup, ...).
+
+- **Custom templates:** users create, edit and delete their own on the **Templates** page (`/dashboard/templates`). They
+  belong to the workspace (personal or organization), are stored in the `custom_templates` table, and appear next to the
+  built-in ones in every template picker. Built-ins can be duplicated and edited as a copy. Deleting a template switches
+  the projects that used it back to Weekly update. Each workspace can have up to 20.
+- **Built-in templates:** edit [`src/lib/ai/templates.ts`](../src/lib/ai/templates.ts): add its id to `TEMPLATE_IDS` and an
+  entry to `TEMPLATES` with a `label`, a `description` and the `instructions` given to the model. The id is stored as
+  text, so no migration is needed.
+
+Whatever the template says, the shared rules in `buildSystemPrompt` apply: write in plain language, never paste commit
+messages, pull request titles or file paths, and never invent facts. For the newest 20 pull requests and 15 commits the app
+also sends the changed file names and short excerpts of the added code (`CHANGES_BUDGET` in
+`src/lib/github-activity.ts`), so the model can describe what a change does. Set both numbers to 0 to stop sending code.
 
 ## AI providers
 

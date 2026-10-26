@@ -5,8 +5,16 @@ follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- Templates page: create, edit and delete your own generation templates, or duplicate a built-in one. Custom templates
+  can be chosen per project and per run. Requires running `npm run db:migrate` (new `custom_templates` table).
+
 ### Changed
 
+- Ship logs describe what changed in plain language instead of repeating commit titles. The model now also receives full
+  commit messages, longer pull request descriptions and, for the newest pull requests and commits, the changed file names
+  and short excerpts of added code. The Privacy template mentions this.
 - Captain's-log redesign: parchment, ink and brass theme with a dark mode toggle, serif headings, ship's wheel logo and
   favicon, wave dividers on the landing page, themed Clerk sign-in/up, Open Graph image and emails.
 - Status colors use `--success`, `--warning` and `--danger` tokens; a few empty states and the 404 got nautical copy.
