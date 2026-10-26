@@ -4,6 +4,7 @@ import {
   type RepoActivity,
   applyBudget,
   asActivity,
+  describeChanges,
   dropPullCommits,
   excerpt,
   formatActivity,
@@ -36,7 +37,7 @@ describe("normalizeCommits", () => {
       rawCommit({ author: { login: "renovate", type: "Bot" } }),
     ]);
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ sha: "abcdef1", message: "Fix bug", author: "dev" });
+    expect(result[0]).toMatchObject({ sha: "abcdef1", message: "Fix bug", body: "long body", author: "dev" });
   });
 
   it("keeps commits whose author has no GitHub account", () => {
@@ -187,6 +188,47 @@ describe("excerpt", () => {
   it("collapses whitespace and truncates", () => {
     expect(excerpt("a   b\n c")).toBe("a b c");
     expect(excerpt("x".repeat(400), 10)).toHaveLength(10);
+  });
+});
+
+describe("describeChanges", () => {
+  it("lists changed files and excerpts the added lines, skipping lockfiles and assets", () => {
+    const text = describeChanges([
+      { filename: "package-lock.json", additions: 900, deletions: 3, patch: "+noise" },
+      { filename: "logo.png", additions: 0, deletions: 0 },
+      {
+        filename: "src/search.tsx",
+        additions: 2,
+        deletions: 1,
+        patch: "@@ -1,2 +1,3 @@\n-old\n+<h2>Search your logs</h2>\n+<Filters />\n context",
+      },
+    ]);
+    expect(text).toContain("Changed files: src/search.tsx (+2/-1)");
+    expect(text).not.toContain("package-lock");
+    expect(text).not.toContain("logo.png");
+    expect(text).toContain("Added code excerpts: src/search.tsx: <h2>Search your logs</h2> | <Filters />");
+  });
+
+  it("caps the file list and returns nothing when only noise changed", () => {
+    const many = Array.from({ length: 15 }, (_, i) => ({ filename: `f${i}.ts`, additions: 1, deletions: 0 }));
+    expect(describeChanges(many)).toContain("and 3 more");
+    expect(describeChanges([{ filename: "yarn.lock" }])).toBe("");
+  });
+});
+
+describe("formatActivity details", () => {
+  it("prints commit bodies and change summaries as indented lines under their item", () => {
+    const base = repoActivity("o/a", 1);
+    base.commits[0] = { ...base.commits[0], body: "Lets people filter by date", changes: "Changed files: a.ts (+1/-0)" };
+    base.pullRequests = [
+      { number: 7, title: "Add export", body: "Adds CSV export", changes: "Changed files: b.ts (+5/-1)", labels: [], author: "d", mergedAt: "2026-10-03T00:00:00Z", url: "" },
+    ];
+    const lines = formatActivity({ since: "", until: "", repos: [base] }).split("\n");
+    const pr = lines.indexOf("- #7 Add export (d, 2026-10-03): Adds CSV export");
+    expect(lines[pr + 1]).toBe("    Changed files: b.ts (+5/-1)");
+    const commit = lines.indexOf("- commit 0 (2026-10-02)");
+    expect(lines[commit + 1]).toBe("    Details: Lets people filter by date");
+    expect(lines[commit + 2]).toBe("    Changed files: a.ts (+1/-0)");
   });
 });
 

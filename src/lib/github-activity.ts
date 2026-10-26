@@ -1,8 +1,19 @@
-export type ActivityCommit = { sha: string; message: string; author: string; date: string; url: string };
+export type ActivityCommit = {
+  sha: string;
+  message: string;
+  // Rest of the commit message after the first line.
+  body?: string;
+  // Compact list of changed files and added-text excerpts, filled in for the newest items only.
+  changes?: string;
+  author: string;
+  date: string;
+  url: string;
+};
 export type ActivityPull = {
   number: number;
   title: string;
   body: string;
+  changes?: string;
   labels: string[];
   author: string;
   mergedAt: string;
@@ -60,7 +71,44 @@ export type RawRelease = {
 };
 
 export const ITEM_BUDGET = { releases: 10, pullRequests: 50, issues: 20, commits: 60 };
+// Looking up changed files costs one GitHub request per item, so only the newest items get it.
+export const CHANGES_BUDGET = { pullRequests: 20, commits: 15 };
 const BODY_EXCERPT = 300;
+const PULL_BODY_EXCERPT = 800;
+const COMMIT_BODY_EXCERPT = 500;
+const MAX_LISTED_FILES = 12;
+const MAX_EXCERPT_FILES = 3;
+const EXCERPT_CHARS = 400;
+
+export type RawFile = { filename: string; additions?: number; deletions?: number; patch?: string };
+
+// Lockfiles, generated output and binary assets say nothing about what a change does.
+const NOISE_FILE =
+  /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|dist\/|build\/|\.next\/)|\.(lock|snap|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|pdf)$|\.min\.(js|css)$/i;
+
+export function describeChanges(files: RawFile[]): string {
+  const relevant = files.filter((f) => !NOISE_FILE.test(f.filename));
+  if (relevant.length === 0) return "";
+  const listed = relevant
+    .slice(0, MAX_LISTED_FILES)
+    .map((f) => `${f.filename} (+${f.additions ?? 0}/-${f.deletions ?? 0})`);
+  const more = relevant.length - listed.length;
+  const lines = [`Changed files: ${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}`];
+
+  const excerpts: string[] = [];
+  for (const f of relevant) {
+    if (excerpts.length >= MAX_EXCERPT_FILES) break;
+    const added = (f.patch ?? "")
+      .split("\n")
+      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+      .map((l) => l.slice(1).trim())
+      .filter(Boolean)
+      .join(" | ");
+    if (added) excerpts.push(`${f.filename}: ${excerpt(added, EXCERPT_CHARS)}`);
+  }
+  if (excerpts.length) lines.push(`Added code excerpts: ${excerpts.join(" ;; ")}`);
+  return lines.join("\n");
+}
 
 const isBot = (user: RawUser) => user?.type === "Bot" || Boolean(user?.login?.endsWith("[bot]"));
 const labelNames = (labels: RawLabel[]) =>
@@ -84,6 +132,7 @@ export function normalizeCommits(raw: RawCommit[]): ActivityCommit[] {
     .map((c) => ({
       sha: c.sha.slice(0, 7),
       message: c.commit.message.split("\n")[0],
+      body: excerpt(c.commit.message.split("\n").slice(1).join("\n"), COMMIT_BODY_EXCERPT),
       author: c.author?.login ?? c.commit.author?.name ?? "unknown",
       date: c.commit.author?.date ?? "",
       url: c.html_url,
@@ -96,7 +145,7 @@ export function normalizePulls(raw: RawPull[], since: Date, until: Date): Activi
     .map((p) => ({
       number: p.number,
       title: p.title,
-      body: excerpt(p.body),
+      body: excerpt(p.body, PULL_BODY_EXCERPT),
       labels: labelNames(p.labels),
       author: p.user?.login ?? "unknown",
       mergedAt: p.merged_at as string,
@@ -181,6 +230,8 @@ export function isActivityEmpty(activity: Activity): boolean {
 
 const day = (iso: string) => iso.slice(0, 10);
 const tags = (labels: string[]) => (labels.length ? ` [${labels.join(", ")}]` : "");
+// Indented so detail lines never start with "- " like an item does.
+const indent = (text: string) => text.split("\n").map((l) => `    ${l}`);
 
 export function formatActivity(activity: Activity): string {
   const blocks: string[] = [];
@@ -196,6 +247,7 @@ export function formatActivity(activity: Activity): string {
       lines.push("Merged pull requests:");
       for (const x of r.pullRequests) {
         lines.push(`- #${x.number} ${x.title}${tags(x.labels)} (${x.author}, ${day(x.mergedAt)})${x.body ? `: ${x.body}` : ""}`);
+        if (x.changes) lines.push(...indent(x.changes));
       }
     }
     if (r.issues.length) {
@@ -204,7 +256,11 @@ export function formatActivity(activity: Activity): string {
     }
     if (r.commits.length) {
       lines.push("Commits:");
-      for (const x of r.commits) lines.push(`- ${x.message} (${day(x.date)})`);
+      for (const x of r.commits) {
+        lines.push(`- ${x.message} (${day(x.date)})`);
+        if (x.body) lines.push(`    Details: ${x.body}`);
+        if (x.changes) lines.push(...indent(x.changes));
+      }
     }
     const omitted = Object.entries(r.omitted).filter(([, n]) => n > 0);
     if (omitted.length) lines.push(`(Omitted for length: ${omitted.map(([k, n]) => `${n} ${k}`).join(", ")})`);
