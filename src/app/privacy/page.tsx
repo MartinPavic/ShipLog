@@ -20,7 +20,8 @@ export default function PrivacyPage() {
         <ul>
           <li>Account data: name, email address and profile image, provided through our sign-in provider.</li>
           <li>GitHub data: your GitHub username, an access token (stored encrypted) and the commit messages, pull request
-            and issue titles, descriptions and releases of the repositories you select.</li>
+            and issue titles, descriptions and releases of the repositories you select, plus the names of changed files
+            and short excerpts of added code for the most recent changes.</li>
           <li>AI settings: the API key you provide (stored encrypted) and your chosen provider and model.</li>
           <li>Content you create: projects, generated logs, edits, share settings and delivery channels (webhook URLs are stored encrypted).</li>
           <li>Billing data: handled by our payment provider; we keep your customer id, plan and status, not your card number.</li>

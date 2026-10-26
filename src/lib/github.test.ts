@@ -68,6 +68,52 @@ describe("fetchActivity", () => {
     expect(calls.some((c) => c.includes("/repos/o/r/commits") && c.includes("since=2026-10-01"))).toBe(true);
   });
 
+  it("attaches changed files to the newest pull requests and commits, ignoring failed lookups", async () => {
+    stubGithub({
+      "/commits": () => [
+        {
+          sha: "bbbbbbb2",
+          html_url: "u",
+          parents: [{}],
+          author: { login: "dev", type: "User" },
+          commit: { message: "Tweak copy", author: { name: "d", date: "2026-10-03T00:00:00Z" } },
+        },
+      ],
+      "/pulls": () => [
+        {
+          number: 7,
+          title: "Add export",
+          body: "",
+          html_url: "u",
+          merged_at: "2026-10-02T00:00:00Z",
+          updated_at: "2026-10-02T00:00:00Z",
+          user: { login: "dev", type: "User" },
+          labels: [],
+        },
+      ],
+      "/files": () => [{ filename: "src/export.ts", additions: 4, deletions: 0, patch: "+export const csv = true;" }],
+      "/bbbbbbb": () => ({ files: [{ filename: "src/copy.ts", additions: 1, deletions: 1 }] }),
+    });
+
+    const [repo] = (await fetchActivity("tok", [{ fullName: "o/r" }], since, until)).repos;
+    expect(repo.pullRequests[0].changes).toContain("Changed files: src/export.ts (+4/-0)");
+    expect(repo.commits[0].changes).toContain("src/copy.ts");
+
+    stubGithub({
+      "/commits": () => [
+        {
+          sha: "bbbbbbb2",
+          html_url: "u",
+          parents: [{}],
+          author: { login: "dev", type: "User" },
+          commit: { message: "Tweak copy", author: { name: "d", date: "2026-10-03T00:00:00Z" } },
+        },
+      ],
+    });
+    const [plain] = (await fetchActivity("tok", [{ fullName: "o/r" }], since, until)).repos;
+    expect(plain.commits[0].changes).toBeUndefined();
+  });
+
   it("stops paginating pull requests once a page falls before the window", async () => {
     const full = Array.from({ length: 100 }, (_, i) => ({
       number: i,

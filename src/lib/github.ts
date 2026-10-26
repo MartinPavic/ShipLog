@@ -7,10 +7,13 @@ import {
   type Activity,
   type RepoActivity,
   type RawCommit,
+  type RawFile,
   type RawIssue,
   type RawPull,
   type RawRelease,
+  CHANGES_BUDGET,
   applyBudget,
+  describeChanges,
   dropPullCommits,
   normalizeCommits,
   normalizeIssues,
@@ -145,7 +148,48 @@ export async function fetchActivity(
   until: Date
 ): Promise<Activity> {
   const perRepo = await Promise.all(repos.map((r) => fetchRepoActivity(token, r, since, until)));
-  return { since: since.toISOString(), until: until.toISOString(), repos: applyBudget(perRepo) };
+  const budgeted = applyBudget(perRepo);
+  await attachChanges(token, budgeted);
+  return { since: since.toISOString(), until: until.toISOString(), repos: budgeted };
+}
+
+// Best effort: a failed lookup just leaves that item with its title and description.
+async function fetchFiles(token: string, path: string): Promise<RawFile[]> {
+  try {
+    const res = await ghFetch(token, path);
+    if (!res.ok) return [];
+    const data = (await res.json()) as unknown;
+    const files = Array.isArray(data) ? data : (data as { files?: unknown } | null)?.files;
+    return Array.isArray(files) ? (files as RawFile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const CHANGES_CONCURRENCY = 5;
+
+// What a change does is rarely in its title, so the newest items get their changed files and added code.
+async function attachChanges(token: string, repos: RepoActivity[]): Promise<void> {
+  const jobs: (() => Promise<void>)[] = [];
+  let pulls = 0;
+  let commits = 0;
+  for (const r of repos) {
+    for (const pr of r.pullRequests) {
+      if (pulls++ >= CHANGES_BUDGET.pullRequests) break;
+      jobs.push(async () => {
+        pr.changes = describeChanges(await fetchFiles(token, `/repos/${r.repo}/pulls/${pr.number}/files?per_page=30`)) || undefined;
+      });
+    }
+    for (const c of r.commits) {
+      if (commits++ >= CHANGES_BUDGET.commits) break;
+      jobs.push(async () => {
+        c.changes = describeChanges(await fetchFiles(token, `/repos/${r.repo}/commits/${c.sha}`)) || undefined;
+      });
+    }
+  }
+  for (let i = 0; i < jobs.length; i += CHANGES_CONCURRENCY) {
+    await Promise.all(jobs.slice(i, i + CHANGES_CONCURRENCY).map((job) => job()));
+  }
 }
 
 export type RepoSummary = {
