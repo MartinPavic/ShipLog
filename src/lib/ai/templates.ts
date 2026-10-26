@@ -8,6 +8,11 @@ export const TEMPLATE_IDS = [
 ] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
+// What the UI needs to list and pick templates; `id` is a built-in id or the uuid of a custom template.
+export type TemplateView = { id: string; label: string; description: string; instructions: string; builtIn: boolean };
+
+export const isBuiltInTemplate = (id: string): id is TemplateId => (TEMPLATE_IDS as readonly string[]).includes(id);
+
 export const TEMPLATES: Record<TemplateId, { label: string; description: string; instructions: string }> = {
   weekly_update: {
     label: "Weekly update",
@@ -47,19 +52,31 @@ export const TEMPLATES: Record<TemplateId, { label: string; description: string;
   },
 };
 
+export function builtInTemplates(): TemplateView[] {
+  return TEMPLATE_IDS.map((id) => ({ id, ...TEMPLATES[id], builtIn: true }));
+}
+
+// Logs keep the id they were generated with, so a deleted custom template still needs a readable name.
+export function templateLabel(templates: TemplateView[], id: string): string {
+  return templates.find((t) => t.id === id)?.label ?? "Custom template";
+}
+
 export type PromptContext = {
   name: string;
   description?: string | null;
-  template: TemplateId;
+  // A built-in template id, or the template's own instructions through `instructions`.
+  template: string;
+  instructions?: string;
   tone?: string | null;
   audience?: string | null;
   customPrompt?: string | null;
 };
 
 export function buildSystemPrompt(ctx: PromptContext): string {
+  const instructions = ctx.instructions ?? (isBuiltInTemplate(ctx.template) ? TEMPLATES[ctx.template].instructions : "");
   const parts = [
     "You are an expert engineering communicator who turns raw GitHub activity into clear written updates.",
-    TEMPLATES[ctx.template].instructions,
+    instructions,
     ctx.tone ? `Tone: ${ctx.tone}.` : null,
     ctx.audience ? `Audience: ${ctx.audience}.` : null,
     ctx.customPrompt ? `Additional instructions from the project owner:\n${ctx.customPrompt}` : null,
@@ -89,6 +106,6 @@ export function buildUserPrompt(ctx: PromptContext, activityText: string, start:
   return `${header.filter(Boolean).join("\n")}\n\nGitHub activity:\n\n${activityText}`;
 }
 
-export function defaultLogTitle(template: TemplateId, start: Date, end: Date): string {
-  return `${TEMPLATES[template].label}: ${formatPeriod(start, end)}`;
+export function defaultLogTitle(label: string, start: Date, end: Date): string {
+  return `${label}: ${formatPeriod(start, end)}`;
 }

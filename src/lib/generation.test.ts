@@ -111,9 +111,10 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
   afterAll(async () => {
     const { eq } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, githubConnections, projects, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, customTemplates, githubConnections, projects, usageCounters } = await import("@/db/schema");
     const db = getDb();
     await db.delete(projects).where(eq(projects.ownerId, owner.ownerId));
+    await db.delete(customTemplates).where(eq(customTemplates.ownerId, owner.ownerId));
     await db.delete(usageCounters).where(eq(usageCounters.ownerId, owner.ownerId));
     await db.delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
     await db.delete(githubConnections).where(eq(githubConnections.userId, owner.userId));
@@ -158,6 +159,31 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     const { asActivity } = await import("./github-activity");
     expect(asActivity(log.sourceSnapshot)?.repos[0].commits[0].message).toBe("Add search");
     expect(await usage()).toBe(1);
+  });
+
+  it("writes with a custom template's instructions and titles the log after it", async () => {
+    stubApis();
+    const { createTemplate } = await import("./templates");
+    const { startStreamingGeneration } = await import("./generation");
+    const template = await createTemplate(owner, {
+      name: "Monthly digest",
+      description: "",
+      instructions: "Write exactly one friendly sentence.",
+    });
+
+    const gen = await startStreamingGeneration({ owner, project, period: { days: 7 }, template: template.id });
+    await gen.finish(await collect(gen.stream));
+
+    const log = await logRow(gen.logId);
+    expect(log.template).toBe(template.id);
+    expect(log.title).toMatch(/^Monthly digest: /);
+    const calls = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string | URL, RequestInit?][];
+    const aiCall = calls.find(([url]) => String(url).includes("api.openai.com"));
+    expect(String(aiCall?.[1]?.body)).toContain("Write exactly one friendly sentence.");
+
+    await expect(
+      startStreamingGeneration({ owner, project, period: { days: 7 }, template: "11111111-1111-4111-8111-111111111111" })
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("marks the log failed and refunds usage when the stream fails", async () => {

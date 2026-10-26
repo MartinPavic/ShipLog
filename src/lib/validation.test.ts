@@ -5,9 +5,11 @@ import {
   generateSchema,
   logListQuerySchema,
   repoNameSchema,
+  templateInputSchema,
   updateChannelSchema,
   updateLogSchema,
   updateProjectSchema,
+  updateTemplateSchema,
 } from "./validation";
 
 describe("repoNameSchema", () => {
@@ -32,6 +34,33 @@ describe("generateSchema", () => {
   it("rejects unknown templates and malformed log ids", () => {
     expect(generateSchema.safeParse({ template: "nope" }).success).toBe(false);
     expect(generateSchema.safeParse({ regenerateLogId: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("accepts built-in template ids and custom template uuids", () => {
+    expect(generateSchema.safeParse({ template: "changelog" }).success).toBe(true);
+    expect(generateSchema.safeParse({ template: "3f1c2a52-0000-4000-8000-000000000000" }).success).toBe(true);
+  });
+});
+
+describe("templateInputSchema", () => {
+  const instructions = "Write a short monthly update for customers.";
+
+  it("trims, defaults the description and requires meaningful instructions", () => {
+    expect(templateInputSchema.parse({ name: "  Monthly ", instructions })).toEqual({
+      name: "Monthly",
+      description: "",
+      instructions,
+    });
+    expect(templateInputSchema.safeParse({ name: "", instructions }).success).toBe(false);
+    expect(templateInputSchema.safeParse({ name: "x", instructions: "too short" }).success).toBe(false);
+    expect(templateInputSchema.safeParse({ name: "x", instructions: "y".repeat(3001) }).success).toBe(false);
+  });
+
+  it("needs at least one field to update", () => {
+    expect(updateTemplateSchema.safeParse({}).success).toBe(false);
+    expect(updateTemplateSchema.safeParse({ name: "New name" }).success).toBe(true);
+    // Omitted fields must stay undefined so an update never clears them.
+    expect(updateTemplateSchema.parse({ name: "New name" })).toEqual({ name: "New name" });
   });
 });
 

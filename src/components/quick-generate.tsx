@@ -3,18 +3,20 @@
 import { useState } from "react";
 import { ProjectGenerate } from "@/components/project-generate";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { TemplateId } from "@/lib/ai/templates";
+import type { TemplateView } from "@/lib/ai/templates";
 
-type QuickProject = { id: string; name: string; defaultPeriodDays: number; template: TemplateId };
+type QuickProject = { id: string; name: string; defaultPeriodDays: number; template: string };
 
 // The same generator as the project page, with a project picker in front.
 export function QuickGenerate({
   projects,
+  templates,
   initialProjectId,
   usage,
   setupMessage,
 }: {
   projects: QuickProject[];
+  templates: TemplateView[];
   initialProjectId: string;
   usage: { used: number; limit: number | null };
   setupMessage: string | null;
@@ -47,6 +49,7 @@ export function QuickGenerate({
         projectId={project.id}
         defaultDays={project.defaultPeriodDays}
         defaultTemplate={project.template}
+        templates={templates}
         setupMessage={setupMessage}
         usage={usage}
       />

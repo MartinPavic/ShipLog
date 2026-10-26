@@ -18,12 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from "@/lib/ai/templates";
+import { type TemplateView } from "@/lib/ai/templates";
 import { streamGeneration, type GenerateRequest } from "@/lib/client-generate";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
 import { asActivity, type Activity } from "@/lib/github-activity";
 
-const TEMPLATE_ITEMS = Object.fromEntries(TEMPLATE_IDS.map((id) => [id, TEMPLATES[id].label]));
 const PERIOD_ITEMS = { days: "Last N days", range: "Date range" };
 
 type Result = { logId: string; title: string; content: string; activity: Activity | null };
@@ -32,17 +31,20 @@ export function ProjectGenerate({
   projectId,
   defaultDays,
   defaultTemplate,
+  templates,
   setupMessage,
   usage,
 }: {
   projectId: string;
   defaultDays: number;
-  defaultTemplate: TemplateId;
+  defaultTemplate: string;
+  templates: TemplateView[];
   setupMessage: string | null;
   usage: { used: number; limit: number | null };
 }) {
   const router = useRouter();
-  const [template, setTemplate] = useState<TemplateId>(defaultTemplate);
+  const templateItems = Object.fromEntries(templates.map((t) => [t.id, t.label]));
+  const [template, setTemplate] = useState(defaultTemplate);
   const [mode, setMode] = useState<"days" | "range">("days");
   const [days, setDays] = useState(defaultDays);
   const [from, setFrom] = useState("");
@@ -117,17 +119,17 @@ export function ProjectGenerate({
                   <Label>Template</Label>
                   <Select
                     value={template}
-                    items={TEMPLATE_ITEMS}
-                    onValueChange={(v) => v && setTemplate(v as TemplateId)}
+                    items={templateItems}
+                    onValueChange={(v) => v && setTemplate(v)}
                     disabled={running}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {TEMPLATE_IDS.map((id) => (
-                        <SelectItem key={id} value={id}>
-                          {TEMPLATES[id].label}
+                      {templates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

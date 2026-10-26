@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   TEMPLATES,
   TEMPLATE_IDS,
+  builtInTemplates,
   buildSystemPrompt,
   buildUserPrompt,
   defaultLogTitle,
   formatPeriod,
+  isBuiltInTemplate,
+  templateLabel,
 } from "./templates";
 
 const start = new Date("2026-10-06T00:00:00Z");
@@ -43,6 +46,34 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("Audience:");
     expect(prompt).not.toContain("Additional instructions");
   });
+
+  it("asks for plain-language, feature-level descriptions instead of commit titles", () => {
+    const prompt = buildSystemPrompt(base);
+    expect(prompt).toContain("plain language");
+    expect(prompt).toContain("Never paste commit messages, pull request titles");
+    expect(prompt).toContain("changed files and code excerpts");
+  });
+
+  it("uses the instructions of a custom template instead of a built-in one", () => {
+    const prompt = buildSystemPrompt({ name: "Site", template: "3f1c2a52-0000-4000-8000-000000000000", instructions: "Write a haiku." });
+    expect(prompt).toContain("Write a haiku.");
+    expect(prompt).not.toContain(TEMPLATES.changelog.instructions);
+  });
+});
+
+describe("template helpers", () => {
+  it("lists every built-in template and recognises their ids", () => {
+    expect(builtInTemplates().map((t) => t.id)).toEqual([...TEMPLATE_IDS]);
+    expect(builtInTemplates().every((t) => t.builtIn)).toBe(true);
+    expect(isBuiltInTemplate("standup")).toBe(true);
+    expect(isBuiltInTemplate("3f1c2a52-0000-4000-8000-000000000000")).toBe(false);
+  });
+
+  it("labels deleted custom templates generically", () => {
+    const custom = { id: "c1", label: "Monthly", description: "", instructions: "x", builtIn: false };
+    expect(templateLabel([...builtInTemplates(), custom], "c1")).toBe("Monthly");
+    expect(templateLabel(builtInTemplates(), "c1")).toBe("Custom template");
+  });
 });
 
 describe("prompts and titles", () => {
@@ -59,6 +90,6 @@ describe("prompts and titles", () => {
   });
 
   it("titles logs by template and period", () => {
-    expect(defaultLogTitle("weekly_update", start, end)).toBe("Weekly update: Oct 6 – Oct 13, 2026");
+    expect(defaultLogTitle("Weekly update", start, end)).toBe("Weekly update: Oct 6 – Oct 13, 2026");
   });
 });

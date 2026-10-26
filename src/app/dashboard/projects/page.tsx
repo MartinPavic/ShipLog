@@ -7,10 +7,15 @@ import { formatDate } from "@/lib/format";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { listProjects } from "@/lib/projects";
+import { listTemplates } from "@/lib/templates";
 
 export default async function ProjectsPage() {
   const owner = await getOwner();
-  const [projects, { limits, plan }] = await Promise.all([listProjects(owner.ownerId), getPlanLimits(owner.ownerId)]);
+  const [projects, { limits, plan }, templates] = await Promise.all([
+    listProjects(owner.ownerId),
+    getPlanLimits(owner.ownerId),
+    listTemplates(owner.ownerId),
+  ]);
   const atLimit = projects.length >= limits.maxProjects;
 
   return (
@@ -58,7 +63,7 @@ export default async function ProjectsPage() {
           </CardContent>
         </Card>
       ) : (
-        <ProjectForm mode="create" />
+        <ProjectForm mode="create" templates={templates} />
       )}
     </div>
   );

@@ -102,6 +102,23 @@ export const projects = pgTable(
   ]
 );
 
+// Owner-defined generation templates. projects.template and ship_logs.template hold either a
+// built-in template id or the uuid of a row here.
+export const customTemplates = pgTable(
+  "custom_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: text("owner_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    instructions: text("instructions").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("custom_templates_owner_idx").on(t.ownerId)]
+);
+
 export const shipLogs = pgTable(
   "ship_logs",
   {

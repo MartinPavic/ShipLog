@@ -3,13 +3,14 @@ import { getDb } from "@/db";
 import { shipLogVersions, shipLogs } from "@/db/schema";
 import { resolveAiAccess, type AiAccess } from "@/lib/ai/access";
 import { complete, openCompletionStream } from "@/lib/ai/providers";
-import { buildSystemPrompt, buildUserPrompt, defaultLogTitle, type TemplateId } from "@/lib/ai/templates";
+import { buildSystemPrompt, buildUserPrompt, defaultLogTitle } from "@/lib/ai/templates";
 import { ApiError } from "@/lib/api";
 import { fetchActivity, getGithubConnection, listRecentlyPushedRepos } from "@/lib/github";
 import { formatActivity, isActivityEmpty, type Activity } from "@/lib/github-activity";
 import type { ShipLog } from "@/lib/logs";
 import type { Owner } from "@/lib/owner";
 import type { Project } from "@/lib/projects";
+import { getTemplate, requireTemplate } from "@/lib/templates";
 import { releaseGeneration, reserveGeneration, type Reservation } from "@/lib/usage";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -30,7 +31,7 @@ type GenerateInput = {
   owner: Owner;
   project: Project;
   period?: PeriodInput;
-  template?: TemplateId;
+  template?: string;
   // Regenerating keeps the log's period and saves the previous text as a version.
   existing?: ShipLog;
 };
@@ -40,7 +41,8 @@ type Prepared = {
   ai: AiAccess;
   reservation: Reservation;
   period: { start: Date; end: Date };
-  templateId: TemplateId;
+  templateId: string;
+  templateLabel: string;
   activity: Activity;
   system: string;
   prompt: string;
@@ -60,7 +62,11 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
     const period = existing
       ? { start: existing.periodStart, end: existing.periodEnd }
       : resolvePeriod(input.period ?? {}, project.defaultPeriodDays);
-    const templateId = input.template ?? (existing?.template as TemplateId | undefined) ?? (project.template as TemplateId);
+    // An explicit choice must exist; a deleted template on an old log falls back to the project's.
+    const template = input.template
+      ? await requireTemplate(owner.ownerId, input.template)
+      : ((existing && (await getTemplate(owner.ownerId, existing.template))) ||
+        (await requireTemplate(owner.ownerId, project.template)));
 
     const repos = project.repos.length ? project.repos : await listRecentlyPushedRepos(github.token, period.start);
     const activity = await fetchActivity(github.token, repos, period.start, period.end);
@@ -72,13 +78,14 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       );
     }
 
-    const ctx = { ...project, template: templateId };
+    const ctx = { ...project, template: template.id, instructions: template.instructions };
     return {
       input,
       ai,
       reservation,
       period,
-      templateId,
+      templateId: template.id,
+      templateLabel: template.label,
       activity,
       system: buildSystemPrompt(ctx),
       prompt: buildUserPrompt(ctx, formatActivity(activity), period.start, period.end),
@@ -120,7 +127,7 @@ async function saveGenerated(p: Prepared, content: string, logId?: string) {
       projectId: project.id,
       ownerId: owner.ownerId,
       createdBy: owner.userId,
-      title: defaultLogTitle(p.templateId, p.period.start, p.period.end),
+      title: defaultLogTitle(p.templateLabel, p.period.start, p.period.end),
       periodStart: p.period.start,
       periodEnd: p.period.end,
     })
@@ -192,7 +199,7 @@ export async function startStreamingGeneration(input: GenerateInput): Promise<St
           projectId: project.id,
           ownerId: input.owner.ownerId,
           createdBy: input.owner.userId,
-          title: defaultLogTitle(p.templateId, p.period.start, p.period.end),
+          title: defaultLogTitle(p.templateLabel, p.period.start, p.period.end),
           periodStart: p.period.start,
           periodEnd: p.period.end,
           template: p.templateId,
