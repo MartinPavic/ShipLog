@@ -34,6 +34,7 @@ export function ProjectGenerate({
   templates,
   setupMessage,
   usage,
+  projectField,
 }: {
   projectId: string;
   defaultDays: number;
@@ -41,6 +42,7 @@ export function ProjectGenerate({
   templates: TemplateView[];
   setupMessage: string | null;
   usage: { used: number; limit: number | null };
+  projectField?: React.ReactNode;
 }) {
   const router = useRouter();
   const templateItems = Object.fromEntries(templates.map((t) => [t.id, t.label]));
@@ -58,6 +60,8 @@ export function ProjectGenerate({
 
   const today = new Date().toISOString().slice(0, 10);
   const periodValid = mode === "days" ? days >= 1 && days <= 90 : Boolean(from && to && from <= to);
+  const FormContainer = projectField ? "div" : Card;
+  const FormContent = projectField ? "div" : CardContent;
 
   async function run(request: GenerateRequest) {
     const controller = new AbortController();
@@ -99,12 +103,13 @@ export function ProjectGenerate({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <FormContainer>
+        {!projectField && <CardHeader className="flex flex-row items-start justify-between gap-4">
           <CardTitle>Generate a ship log</CardTitle>
           <UsageMeter used={usage.used} limit={usage.limit} />
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </CardHeader>}
+        <FormContent className="space-y-4">
+          {setupMessage && projectField}
           {setupMessage ? (
             <p className="text-sm text-muted-foreground">
               {setupMessage}{" "}
@@ -114,8 +119,9 @@ export function ProjectGenerate({
             </p>
           ) : (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
+              <div className={`grid gap-4 ${projectField ? "md:grid-cols-3" : "sm:grid-cols-2"}`}>
+                {projectField}
+                <div className="min-w-0 space-y-2">
                   <Label>Template</Label>
                   <Select
                     value={template}
@@ -135,7 +141,7 @@ export function ProjectGenerate({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Period</Label>
                   <Select
                     value={mode}
@@ -170,11 +176,11 @@ export function ProjectGenerate({
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-4">
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Label htmlFor="period-from">From</Label>
                     <Input id="period-from" type="date" max={today} value={from} disabled={running} onChange={(e) => setFrom(e.target.value)} />
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <Label htmlFor="period-to">To</Label>
                     <Input id="period-to" type="date" max={today} value={to} disabled={running} onChange={(e) => setTo(e.target.value)} />
                   </div>
@@ -182,7 +188,7 @@ export function ProjectGenerate({
               )}
 
               <div className="flex gap-2">
-                <Button onClick={generate} disabled={running || !periodValid}>
+                <Button className={projectField ? "w-full sm:w-auto" : undefined} onClick={generate} disabled={running || !periodValid}>
                   {running ? "Generating..." : "Generate"}
                 </Button>
                 {running && (
@@ -200,15 +206,15 @@ export function ProjectGenerate({
               {limitReached && <UpgradeButton />}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </FormContent>
+      </FormContainer>
 
       {(running || result || text) && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle>{result?.title ?? "Generating..."}</CardTitle>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-4">
+            <CardTitle className="min-w-0 break-words">{result?.title ?? "Generating..."}</CardTitle>
             {result && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(result.content)}>
                   Copy
                 </Button>
@@ -219,7 +225,7 @@ export function ProjectGenerate({
                   href={`/dashboard/projects/${projectId}/logs/${result.logId}`}
                   className="self-center text-sm underline underline-offset-2"
                 >
-                  Open
+                  Review and share
                 </Link>
               </div>
             )}

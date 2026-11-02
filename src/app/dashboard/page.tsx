@@ -6,7 +6,6 @@ import { QuickGenerate } from "@/components/quick-generate";
 import { ManageBillingButton, UpgradeButton } from "@/components/upgrade-button";
 import { UsageMeter } from "@/components/usage-meter";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { features } from "@/env";
 import { PROJECT_COOKIE } from "@/lib/constants";
 import { getDashboardData } from "@/lib/dashboard";
@@ -14,20 +13,6 @@ import { formatRelative } from "@/lib/format";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { limitsFor } from "@/lib/plans";
 import { listTemplates } from "@/lib/templates";
-
-function Stat({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <p className="text-sm text-muted-foreground">{label}</p>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold">{children}</div>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
-}
 
 export default async function DashboardPage({
   searchParams,
@@ -51,18 +36,12 @@ export default async function DashboardPage({
   const setupMessage = !setup.github ? "Connect GitHub first." : !setup.canGenerate ? "Add an AI API key first." : null;
 
   return (
-    <div className="max-w-4xl space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="mx-auto max-w-5xl space-y-8">
+      <div>
         <div>
-          <h1 className="text-2xl font-bold">Welcome back{user?.firstName ? `, ${user.firstName}` : ""}</h1>
-          <p className="text-muted-foreground">Your ship logs at a glance.</p>
+          <h1 className="text-2xl font-bold">Your reporting workspace</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Welcome back{user?.firstName ? `, ${user.firstName}` : ""}.</p>
         </div>
-        {billing && (
-          <div className="flex items-center gap-3">
-            <Badge variant={plan === "pro" ? "default" : "secondary"}>{plan === "pro" ? "Pro" : "Free"}</Badge>
-            {isAdmin(owner) && (plan === "pro" ? <ManageBillingButton /> : <UpgradeButton />)}
-          </div>
-        )}
       </div>
 
       {success && (
@@ -80,22 +59,9 @@ export default async function DashboardPage({
 
       {!onboarding.complete && <OnboardingChecklist steps={onboarding.steps} next={onboarding.next} />}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Logs this month">{stats.logsThisMonth}</Stat>
-        <Stat label="Projects" hint={Number.isFinite(maxProjects) ? `of ${maxProjects} on your plan` : undefined}>
-          {stats.projectCount}
-        </Stat>
-        <Stat label="Last generated">
-          <span className="text-lg">{stats.lastGeneratedAt ? formatRelative(stats.lastGeneratedAt) : "Never"}</span>
-        </Stat>
-        <Stat label="Usage">
-          <UsageMeter used={usage.used} limit={usage.limit} />
-        </Stat>
-      </div>
-
       {initialProject && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Quick generate</h2>
+        <section className="space-y-5 border-t-2 border-double border-brass/60 pt-6" aria-labelledby="quick-generate-title">
+          <h2 id="quick-generate-title" className="text-xl font-semibold">Quick generate</h2>
           <QuickGenerate
             projects={projects.map((p) => ({
               id: p.id,
@@ -111,9 +77,9 @@ export default async function DashboardPage({
         </section>
       )}
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent logs</h2>
+      <section className="space-y-3" aria-labelledby="recent-reports-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="recent-reports-title" className="text-xl font-semibold">Recent reports</h2>
           <Link href="/dashboard/projects" className="text-sm underline underline-offset-2">
             All projects
           </Link>
@@ -121,21 +87,22 @@ export default async function DashboardPage({
         {recentLogs.length === 0 ? (
           <p className="text-sm text-muted-foreground">The log is still blank. Nothing generated yet.</p>
         ) : (
-          <ul className="divide-y rounded-lg border">
+          <ul className="divide-y border-y">
             {recentLogs.map((log) => (
               <li key={log.id}>
                 <Link
                   href={`/dashboard/projects/${log.projectId}/logs/${log.id}`}
-                  className="flex items-center justify-between gap-4 p-4 hover:bg-muted/50"
+                  className="flex flex-wrap items-center justify-between gap-3 py-4 hover:bg-muted/50"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{log.title}</p>
+                  <div className="min-w-0 flex-1 basis-48">
+                    <p className="break-words text-sm font-medium">{log.title}</p>
                     <p className="text-xs text-muted-foreground">{log.projectName}</p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                     {log.status === "generating" && <Badge variant="secondary">Generating</Badge>}
                     {log.status === "failed" && <Badge variant="destructive">Failed</Badge>}
                     {formatRelative(log.createdAt)}
+                    {log.status === "ready" && <span className="text-sm text-foreground underline underline-offset-4">Review and share</span>}
                   </div>
                 </Link>
               </li>
@@ -143,6 +110,22 @@ export default async function DashboardPage({
           </ul>
         )}
       </section>
+
+      <footer aria-label="Account usage" className="flex flex-wrap items-center justify-between gap-5 border-t pt-5 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4">
+          {billing && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant={plan === "pro" ? "default" : "secondary"}>{plan === "pro" ? "Pro" : "Free"}</Badge>
+              {isAdmin(owner) && (plan === "pro" ? <ManageBillingButton /> : <UpgradeButton />)}
+            </div>
+          )}
+          <UsageMeter used={usage.used} limit={usage.limit} />
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <span>{stats.projectCount} projects{Number.isFinite(maxProjects) ? ` of ${maxProjects} on your plan` : ""}</span>
+          <span>{stats.logsThisMonth} reports this month</span>
+        </div>
+      </footer>
     </div>
   );
 }
