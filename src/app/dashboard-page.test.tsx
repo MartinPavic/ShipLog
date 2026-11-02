@@ -108,12 +108,13 @@ describe.skipIf(!process.env.DATABASE_URL)("dashboard page (database)", () => {
     expect(html).toContain('href="/dashboard/settings"');
     expect(html).toContain("Nothing generated yet.");
     expect(html).not.toContain("Quick generate");
-    expect(html).toContain("Never");
+    expect(html).toContain("Your reporting workspace");
+    expect(html).toContain("0 reports this month");
     expect(html).toContain("0 / 5 generations this month");
     expect(html).toContain("of 1 on your plan");
   });
 
-  it("shows stats, recent logs, plan and a quick generator for an active Pro account", async () => {
+  it("shows generation, recent reports and compact account information for an active Pro account", async () => {
     current = pro;
     const html = await render();
     expect(html).toContain(">Pro<");
@@ -121,7 +122,9 @@ describe.skipIf(!process.env.DATABASE_URL)("dashboard page (database)", () => {
     expect(html).not.toContain("Upgrade to Pro");
     expect(html).not.toContain("Get started"); // onboarding is complete
 
-    expect(html).toContain("Logs this month");
+    expect(html).toContain("reports this month");
+    expect(html.indexOf("Quick generate")).toBeLessThan(html.indexOf("Recent reports"));
+    expect(html.indexOf("Recent reports")).toBeLessThan(html.indexOf('aria-label="Account usage"'));
     expect(html).toContain("0 generations this month"); // BYOK on Pro is unlimited; nothing used yet
     expect(html).toContain("Quick generate");
     expect(html).toContain("Alpha site");
@@ -142,7 +145,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dashboard page (database)", () => {
     const html = await render();
     cookieProject = undefined;
     // The selected project's name is the picker's value; the generator belongs to it.
-    expect(html).toMatch(/Project<\/span>[\s\S]*Beta api/);
+    expect(html).toMatch(/Project<\/label>[\s\S]*Beta api/);
   });
 
   it("shows checkout return messages", async () => {

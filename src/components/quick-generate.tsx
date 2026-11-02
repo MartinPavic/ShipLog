@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProjectGenerate } from "@/components/project-generate";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { TemplateView } from "@/lib/ai/templates";
+import { PROJECT_COOKIE } from "@/lib/constants";
 
 type QuickProject = { id: string; name: string; defaultPeriodDays: number; template: string };
 
-// The same generator as the project page, with a project picker in front.
 export function QuickGenerate({
   projects,
   templates,
@@ -22,16 +23,39 @@ export function QuickGenerate({
   setupMessage: string | null;
 }) {
   const [projectId, setProjectId] = useState(initialProjectId);
+  const projectTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef(false);
   const project = projects.find((p) => p.id === projectId) ?? projects[0];
   const items = Object.fromEntries(projects.map((p) => [p.id, p.name]));
 
+  useEffect(() => {
+    if (restoreFocusRef.current) {
+      projectTriggerRef.current?.focus();
+      restoreFocusRef.current = false;
+    }
+  }, [projectId]);
+
+  if (!project) return null;
+
   return (
-    <div className="space-y-4">
-      {projects.length > 1 && (
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">Project</span>
-          <Select value={project.id} items={items} onValueChange={(v) => v && setProjectId(v)}>
-            <SelectTrigger className="min-w-48">
+    <ProjectGenerate
+      key={project.id}
+      projectId={project.id}
+      defaultDays={project.defaultPeriodDays}
+      defaultTemplate={project.template}
+      templates={templates}
+      setupMessage={setupMessage}
+      usage={usage}
+      projectField={
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="quick-project">Project</Label>
+          <Select value={project.id} items={items} onValueChange={(value) => {
+            if (!value || !projects.some((candidate) => candidate.id === value)) return;
+            restoreFocusRef.current = value !== project.id;
+            setProjectId(value);
+            document.cookie = `${PROJECT_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`;
+          }}>
+            <SelectTrigger ref={projectTriggerRef} id="quick-project" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -43,16 +67,7 @@ export function QuickGenerate({
             </SelectContent>
           </Select>
         </div>
-      )}
-      <ProjectGenerate
-        key={project.id}
-        projectId={project.id}
-        defaultDays={project.defaultPeriodDays}
-        defaultTemplate={project.template}
-        templates={templates}
-        setupMessage={setupMessage}
-        usage={usage}
-      />
-    </div>
+      }
+    />
   );
 }
