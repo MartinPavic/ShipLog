@@ -132,6 +132,20 @@ describe("openCompletionStream", () => {
     await expect(collect(stream)).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
   });
 
+  it("rejects OpenAI-style streams that end without the completion marker", async () => {
+    stubFetch(streamOf([openaiChunk("Partial")]));
+    await expect(collect(await openCompletionStream({ ...input, provider: "openai" }))).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
+  });
+
+  it("rejects Anthropic streams that end without message_stop", async () => {
+    stubFetch(streamOf([anthropicChunk("Partial")]));
+    await expect(collect(await openCompletionStream({ ...input, provider: "anthropic" }))).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
+  });
+
   it("rejects unreadable chunks", async () => {
     stubFetch(streamOf(["data: {not json\n\n"]));
     const stream = await openCompletionStream({ ...input, provider: "openai" });

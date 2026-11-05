@@ -8,13 +8,14 @@ try {
 describe.skipIf(!process.env.DATABASE_URL)("custom templates (database)", () => {
   const ownerA = { userId: `test_u_${crypto.randomUUID()}`, orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
   const ownerB = { userId: `test_u_${crypto.randomUUID()}`, orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
+  const ownerC = { userId: `test_u_${crypto.randomUUID()}`, orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
   const input = { name: "Monthly", description: "For customers", instructions: "Write a short monthly update for customers." };
 
   afterAll(async () => {
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
     const { customTemplates, projects } = await import("@/db/schema");
-    const owners = [ownerA.ownerId, ownerB.ownerId];
+    const owners = [ownerA.ownerId, ownerB.ownerId, ownerC.ownerId];
     await getDb().delete(projects).where(inArray(projects.ownerId, owners));
     await getDb().delete(customTemplates).where(inArray(customTemplates.ownerId, owners));
   });
@@ -81,5 +82,20 @@ describe.skipIf(!process.env.DATABASE_URL)("custom templates (database)", () => 
     const have = (await listTemplates(ownerB.ownerId)).filter((t) => !t.builtIn).length;
     for (let i = have; i < MAX_CUSTOM_TEMPLATES; i++) await createTemplate(ownerB, { ...input, name: `T${i}` });
     await expect(createTemplate(ownerB, input)).rejects.toMatchObject({ code: "LIMIT_REACHED" });
+  });
+
+  it("keeps the custom-template cap when concurrent requests compete for the last slot", async () => {
+    const { MAX_CUSTOM_TEMPLATES, createTemplate } = await import("./templates");
+    for (let i = 0; i < MAX_CUSTOM_TEMPLATES - 1; i++) {
+      await createTemplate(ownerC, { ...input, name: `Before ${i}` });
+    }
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) => createTemplate(ownerC, { ...input, name: `Last ${index}` }))
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(9);
+    expect(results.filter((result) => result.status === "rejected" && result.reason.code === "LIMIT_REACHED")).toHaveLength(9);
   });
 });

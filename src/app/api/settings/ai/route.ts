@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { aiCredentials } from "@/db/schema";
@@ -24,16 +24,15 @@ export const PUT = handle(async (req: Request) => {
   const owner = await requireAdmin();
   const body = await parseBody(req, aiSettingsSchema);
   const db = getDb();
-  const existing = await getAiCredential(owner.ownerId);
-  const sameProvider = existing?.provider === body.provider;
-
-  if (!body.apiKey && !sameProvider) {
-    throw new ApiError(400, "Enter an API key to set up this provider.", "VALIDATION");
-  }
-
-  const model = body.model ?? (sameProvider ? existing.model : null);
   await db.transaction(async (tx) => {
-    // One active credential per owner.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"ai-credentials:" + owner.ownerId}))`);
+    const [existing] = await tx.select().from(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId)).limit(1);
+    const sameProvider = existing?.provider === body.provider;
+    if (!body.apiKey && !sameProvider) {
+      throw new ApiError(400, "Enter an API key to set up this provider.", "VALIDATION");
+    }
+
+    const model = body.model ?? (sameProvider ? existing.model : null);
     await tx
       .delete(aiCredentials)
       .where(and(eq(aiCredentials.ownerId, owner.ownerId), ne(aiCredentials.provider, body.provider)));
@@ -63,6 +62,9 @@ export const PUT = handle(async (req: Request) => {
 
 export const DELETE = handle(async () => {
   const owner = await requireAdmin();
-  await getDb().delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
+  await getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"ai-credentials:" + owner.ownerId}))`);
+    await tx.delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
+  });
   return NextResponse.json({ success: true });
 });

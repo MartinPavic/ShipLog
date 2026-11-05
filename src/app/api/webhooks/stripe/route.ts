@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { features } from "@/env";
-import { claimStripeEvent, processStripeEvent, releaseStripeEvent } from "@/lib/billing";
+import { claimStripeEvent, completeStripeEvent, processStripeEvent, releaseStripeEvent } from "@/lib/billing";
 import { stripe } from "@/lib/stripe";
 
 export async function POST(req: Request) {
@@ -22,15 +22,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  if (!(await claimStripeEvent(event.id))) {
+  const claim = await claimStripeEvent(event.id);
+  if (claim.status === "processed") {
     return NextResponse.json({ received: true, duplicate: true });
   }
+  if (claim.status === "in_progress") return NextResponse.json({ error: "Processing in progress" }, { status: 500 });
 
   try {
-    await processStripeEvent(event);
+    if (!(await processStripeEvent(event, claim.token))) {
+      return NextResponse.json({ error: "Processing lease expired" }, { status: 500 });
+    }
+    if (!(await completeStripeEvent(event.id, claim.token))) {
+      return NextResponse.json({ error: "Processing lease expired" }, { status: 500 });
+    }
   } catch (err) {
     // Free the claim so Stripe's retry gets processed.
-    await releaseStripeEvent(event.id);
+    await releaseStripeEvent(event.id, claim.token);
     console.error(`Webhook ${event.type} failed:`, err);
     return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }

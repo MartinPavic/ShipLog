@@ -284,6 +284,19 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect((await logsOf(fx))[0].content).toBe("Recovered");
   });
 
+  it("retries a transient failure on the next daily cron tick", async () => {
+    const fx = await setup();
+    ai = () => new Response("down", { status: 503 });
+    expect(await run(fx, WEDNESDAY)).toMatchObject({ retry: 1 });
+    expect(await runRow(fx)).toMatchObject({ status: "retry", attempts: 1 });
+
+    ai = () => new Response(JSON.stringify({ choices: [{ message: { content: "Recovered next day" } }] }));
+    const nextDay = await run(fx, new Date("2026-10-15T10:30:00Z"));
+
+    expect(nextDay).toMatchObject({ due: 1, generated: 1, retry: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "done", attempts: 2 });
+  });
+
   it("reclaims a run that crashed while running, but not a fresh one", async () => {
     const fx = await setup();
     const { getDb } = await import("@/db");
@@ -300,6 +313,46 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
       .where(and(eq(scheduledRuns.projectId, fx.projectId), eq(scheduledRuns.slot, SLOT)));
     expect(await run(fx)).toMatchObject({ generated: 1 });
     expect(await runRow(fx)).toMatchObject({ status: "done", attempts: 2 });
+  });
+
+  it("reuses the log and does not resend a scheduled message after a crash", async () => {
+    const fx = await setup();
+    const { getDb } = await import("@/db");
+    const { deliveries, deliveryChannels, scheduledRuns, shipLogs } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const [log] = await getDb().insert(shipLogs).values({
+      projectId: fx.projectId,
+      ownerId: fx.ownerId,
+      createdBy: fx.userId,
+      title: "Already generated",
+      content: "Existing report",
+      periodStart: new Date("2026-10-07"),
+      periodEnd: new Date("2026-10-14"),
+      template: "weekly_update",
+      status: "ready",
+      scheduleKey: `${fx.projectId}:${SLOT}`,
+    }).returning();
+    const [channel] = await getDb().select().from(deliveryChannels).where(eq(deliveryChannels.projectId, fx.projectId));
+    const scheduleKey = `${fx.projectId}:${SLOT}`;
+    await getDb().insert(scheduledRuns).values({
+      projectId: fx.projectId,
+      slot: SLOT,
+      status: "running",
+      attempts: 1,
+      updatedAt: new Date(WEDNESDAY.getTime() - 60 * 60 * 1000),
+    });
+    await getDb().insert(deliveries).values({ logId: log.id, channelId: channel.id, status: "sending", scheduleKey });
+    const aiBefore = calls.filter((call) => call.url.includes("api.openai.com")).length;
+    const slackBefore = calls.filter((call) => call.url.includes("hooks.slack.com")).length;
+
+    const summary = await run(fx, WEDNESDAY);
+
+    expect(summary).toMatchObject({ generated: 1, failed: 0 });
+    expect((await logsOf(fx)).map((item) => item.id)).toEqual([log.id]);
+    expect(calls.filter((call) => call.url.includes("api.openai.com"))).toHaveLength(aiBefore);
+    expect(calls.filter((call) => call.url.includes("hooks.slack.com"))).toHaveLength(slackBefore);
+    expect(await runRow(fx)).toMatchObject({ status: "done", logId: log.id });
+    expect((await getDb().select().from(deliveries).where(eq(deliveries.logId, log.id)))[0].status).toBe("unknown");
   });
 
   it("only delivers when autoDeliver is on, and a failing webhook doesn't fail the run", async () => {

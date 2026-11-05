@@ -119,11 +119,13 @@ export const updateLogSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     content: z.string().max(50_000),
+    expectedContent: z.string().max(50_000),
     pinned: z.boolean(),
     published: z.boolean(),
   })
   .partial()
-  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
+  .refine((v) => Object.entries(v).some(([key, value]) => key !== "expectedContent" && value !== undefined), "Nothing to update")
+  .refine((v) => v.content === undefined || v.expectedContent !== undefined, "The original content is required when saving edits");
 
 export const shareSchema = z.object({
   password: z.union([z.string().min(6, "Password must be at least 6 characters").max(100), z.literal("")]).nullable().optional(),

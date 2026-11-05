@@ -1,0 +1,1 @@
+ALTER TABLE "stripe_events" ADD COLUMN "claim_token" text;

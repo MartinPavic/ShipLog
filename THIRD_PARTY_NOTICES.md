@@ -68,10 +68,10 @@ with the package in `node_modules` after `npm install`. Regenerate with `npm run
 | @types/unist | 2.0.11 | MIT | https://www.npmjs.com/package/@types/unist |
 | @types/unist | 3.0.3 | MIT | https://www.npmjs.com/package/@types/unist |
 | @ungap/structured-clone | 1.4.0 | ISC | https://www.npmjs.com/package/@ungap/structured-clone |
-| @vercel/cli-config | 0.3.1 | Apache-2.0 | https://www.npmjs.com/package/@vercel/cli-config |
+| @vercel/cli-config | 0.3.6 | Apache-2.0 | https://www.npmjs.com/package/@vercel/cli-config |
 | @vercel/cli-exec | 1.0.1 | Apache-2.0 | https://www.npmjs.com/package/@vercel/cli-exec |
-| @vercel/functions | 3.9.11 | Apache-2.0 | https://www.npmjs.com/package/@vercel/functions |
-| @vercel/oidc | 4.0.0 | Apache-2.0 | https://www.npmjs.com/package/@vercel/oidc |
+| @vercel/functions | 3.10.6 | Apache-2.0 | https://www.npmjs.com/package/@vercel/functions |
+| @vercel/oidc | 4.0.6 | Apache-2.0 | https://www.npmjs.com/package/@vercel/oidc |
 | bail | 2.0.2 | MIT | https://www.npmjs.com/package/bail |
 | baseline-browser-mapping | 2.11.29 | Apache-2.0 | https://www.npmjs.com/package/baseline-browser-mapping |
 | caniuse-lite | 1.0.30001816 | CC-BY-4.0 | https://www.npmjs.com/package/caniuse-lite |
@@ -169,6 +169,7 @@ with the package in `node_modules` after `npm install`. Regenerate with `npm run
 | ms | 2.1.3 | MIT | https://www.npmjs.com/package/ms |
 | nanoid | 3.3.20 | MIT | https://www.npmjs.com/package/nanoid |
 | next | 16.4.2 | MIT | https://www.npmjs.com/package/next |
+| next-themes | 0.4.6 | MIT | https://www.npmjs.com/package/next-themes |
 | npm-run-path | 4.0.1 | MIT | https://www.npmjs.com/package/npm-run-path |
 | onetime | 5.1.2 | MIT | https://www.npmjs.com/package/onetime |
 | os-paths | 4.4.0 | MIT | https://www.npmjs.com/package/os-paths |
@@ -237,6 +238,5 @@ with the package in `node_modules` after `npm install`. Regenerate with `npm run
 | xdg-app-paths | 5.5.1 | MIT | https://www.npmjs.com/package/xdg-app-paths |
 | xdg-portable | 7.3.0 | MIT | https://www.npmjs.com/package/xdg-portable |
 | xtend | 4.0.2 | MIT | https://www.npmjs.com/package/xtend |
-| zod | 4.1.11 | MIT | https://www.npmjs.com/package/zod |
 | zod | 4.6.7 | MIT | https://www.npmjs.com/package/zod |
 | zwitch | 2.0.4 | MIT | https://www.npmjs.com/package/zwitch |

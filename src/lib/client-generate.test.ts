@@ -67,6 +67,15 @@ describe("streamGeneration", () => {
     expect(seen.at(-1)).toBe("Partial text");
   });
 
+    it("rejects a clean EOF when the stream ends with only a prefix of the server error marker", async () => {
+      stub(streamResponse(["Partial text", MARK.slice(0, 7)]));
+      const seen: string[] = [];
+      const err = await streamGeneration("p1", {}, (t) => seen.push(t)).catch((e) => e);
+      expect(err).toBeInstanceOf(GenerationError);
+      expect(err).toMatchObject({ message: "The generation stream ended unexpectedly. Please try again.", logId: "log-1" });
+      expect(seen.join("|")).not.toContain("\u001e");
+      expect(seen.at(-1)).toBe("Partial text");
+    });
   it("copes with the marker split across chunks without ever showing it", async () => {
     const half = Math.floor(MARK.length / 2);
     stub(streamResponse(["abc", MARK.slice(0, half), MARK.slice(half) + "boom"]));

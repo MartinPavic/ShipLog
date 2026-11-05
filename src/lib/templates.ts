@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { customTemplates, projects } from "@/db/schema";
 import { builtInTemplates, isBuiltInTemplate, type TemplateView } from "@/lib/ai/templates";
@@ -47,15 +47,18 @@ export async function requireTemplate(ownerId: string, id: string): Promise<Temp
 
 export async function createTemplate(owner: Owner, input: TemplateInput): Promise<TemplateView> {
   const db = getDb();
-  const [{ n }] = await db.select({ n: count() }).from(customTemplates).where(eq(customTemplates.ownerId, owner.ownerId));
-  if (n >= MAX_CUSTOM_TEMPLATES) {
-    throw new ApiError(403, `You can create up to ${MAX_CUSTOM_TEMPLATES} custom templates.`, "LIMIT_REACHED");
-  }
-  const [row] = await db
-    .insert(customTemplates)
-    .values({ ownerId: owner.ownerId, createdBy: owner.userId, ...input })
-    .returning();
-  return toView(row);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"templates:" + owner.ownerId}))`);
+    const [{ n }] = await tx.select({ n: count() }).from(customTemplates).where(eq(customTemplates.ownerId, owner.ownerId));
+    if (n >= MAX_CUSTOM_TEMPLATES) {
+      throw new ApiError(403, `You can create up to ${MAX_CUSTOM_TEMPLATES} custom templates.`, "LIMIT_REACHED");
+    }
+    const [row] = await tx
+      .insert(customTemplates)
+      .values({ ownerId: owner.ownerId, createdBy: owner.userId, ...input })
+      .returning();
+    return toView(row);
+  });
 }
 
 export async function updateTemplate(ownerId: string, id: string, patch: Partial<TemplateInput>): Promise<TemplateView> {

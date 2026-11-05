@@ -11,7 +11,7 @@ import { formatDateTime } from "@/lib/format";
 
 type Channel = { id: string; kind: string; hint: string };
 type HistoryItem = { id: string; kind: string; status: string; error: string | null; sentAt: string };
-type Result = { channelId: string; kind: string; status: "sent" | "failed"; error: string | null };
+type Result = { channelId: string; kind: string; status: "sent" | "failed" | "unknown"; error: string | null };
 
 const LABEL: Record<string, string> = { slack: "Slack", discord: "Discord", email: "Email" };
 
@@ -102,7 +102,7 @@ export function DeliverPanel({
           <ul className="space-y-1 text-sm">
             {results.map((r) => (
               <li key={r.channelId} className={r.status === "sent" ? "text-muted-foreground" : "text-danger"}>
-                {LABEL[r.kind] ?? r.kind}: {r.status === "sent" ? "sent" : `failed — ${r.error}`}
+                {LABEL[r.kind] ?? r.kind}: {r.status === "sent" ? "sent" : r.status === "unknown" ? `not retried — ${r.error}` : `failed — ${r.error}`}
               </li>
             ))}
           </ul>

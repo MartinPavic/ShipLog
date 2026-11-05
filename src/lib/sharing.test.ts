@@ -204,6 +204,19 @@ describe.skipIf(!process.env.DATABASE_URL)("sharing, exports and public changelo
       expect((await unlock("bad-token", "anything", "203.0.113.22")).status).toBe(404);
     });
 
+    it("does not create rate-limit rows for valid-shaped but unknown tokens", async () => {
+      const { createShareToken } = await import("./share");
+      const { getDb } = await import("@/db");
+      const { rateLimits } = await import("@/db/schema");
+      const { like } = await import("drizzle-orm");
+      const token = createShareToken();
+      tokens.add(token);
+
+      expect((await unlock(token, "password", "203.0.113.99")).status).toBe(404);
+      const rows = await getDb().select().from(rateLimits).where(like(rateLimits.key, `unlock:${token}%`));
+      expect(rows).toHaveLength(0);
+    });
+
     it("rate limits repeated guesses per link and address", async () => {
       const log = await insertLog();
       const { shareToken } = await (await share(log.id, { password: "correct password" })).json();

@@ -218,7 +218,7 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
       expect((await PATCH(req("PATCH", { description: "edited by a member" }), ctx(ids.team))).status).toBe(200);
 
       const { PATCH: patchLog } = await import("@/app/api/logs/[id]/route");
-      expect((await patchLog(req("PATCH", { content: "member edit", pinned: true }), ctx(ids.teamLog))).status).toBe(200);
+      expect((await patchLog(req("PATCH", { content: "member edit", expectedContent: "body", pinned: true }), ctx(ids.teamLog))).status).toBe(200);
 
       const { POST: share } = await import("@/app/api/logs/[id]/share/route");
       expect((await share(req("POST", {}), ctx(ids.teamLog))).status).toBe(200);

@@ -1,10 +1,10 @@
 import { siteConfig } from "@/config/site";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { deliveries, deliveryChannels } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { decrypt, encrypt } from "@/lib/crypto";
-import { isEmailConfigured, sendEmail } from "@/lib/email";
+import { EmailDeliveryError, isEmailConfigured, sendEmail } from "@/lib/email";
 import { toHtml, toSlackMrkdwn } from "@/lib/export";
 import { emailLayout } from "@/lib/email-template";
 import { isAllowedWebhook, webhookHint } from "@/lib/webhooks";
@@ -19,7 +19,11 @@ const SLACK_LIMIT = 30_000;
 const DISCORD_EMBED_LIMIT = 4_000;
 const LABELS: Record<ChannelKind, string> = { slack: "Slack", discord: "Discord", email: "Email" };
 
-export class DeliveryError extends Error {}
+export class DeliveryError extends Error {
+  constructor(message: string, readonly unknown = false) {
+    super(message);
+  }
+}
 
 function webhookStatusMessage(label: string, status: number): string {
   if (status === 404 || status === 410) return `${label} no longer knows this webhook. Remove it and add a new one.`;
@@ -41,7 +45,7 @@ async function postJson(url: string, payload: unknown, label: string): Promise<v
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    throw new DeliveryError(`Could not reach ${label}.`);
+    throw new DeliveryError(`Could not confirm delivery to ${label}.`, true);
   }
   if (!res.ok) throw new DeliveryError(webhookStatusMessage(label, res.status));
 }
@@ -60,7 +64,10 @@ export async function sendMessage(kind: ChannelKind, config: ChannelConfig, mess
         html: emailLayout(`<h1 style="margin:0 0 16px;font-size:24px;">${message.title.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</h1>${body}`),
       });
     } catch (err) {
-      throw new DeliveryError(err instanceof Error ? err.message : "Could not send the email.");
+      throw new DeliveryError(
+        err instanceof Error ? err.message : "Could not confirm email delivery.",
+        !(err instanceof EmailDeliveryError) || err.unknown
+      );
     }
     return;
   }
@@ -111,17 +118,19 @@ export async function createChannel(projectId: string, input: CreateChannelInput
     throw new ApiError(400, "Email delivery is not configured on this server.", "EMAIL_NOT_CONFIGURED");
   }
   const db = getDb();
-  const existing = await db.select({ id: deliveryChannels.id }).from(deliveryChannels).where(eq(deliveryChannels.projectId, projectId));
-  if (existing.length >= MAX_CHANNELS) {
-    throw new ApiError(400, `A project can have at most ${MAX_CHANNELS} delivery channels.`, "VALIDATION");
-  }
-
   const config: ChannelConfig = input.kind === "email" ? { recipients: input.recipients } : { webhookUrl: input.webhookUrl };
-  const [row] = await db
-    .insert(deliveryChannels)
-    .values({ projectId, kind: input.kind, encryptedConfig: encrypt(JSON.stringify(config)) })
-    .returning();
-  return toPublic(row);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"channels:" + projectId}))`);
+    const existing = await tx.select({ id: deliveryChannels.id }).from(deliveryChannels).where(eq(deliveryChannels.projectId, projectId));
+    if (existing.length >= MAX_CHANNELS) {
+      throw new ApiError(400, `A project can have at most ${MAX_CHANNELS} delivery channels.`, "VALIDATION");
+    }
+    const [row] = await tx
+      .insert(deliveryChannels)
+      .values({ projectId, kind: input.kind, encryptedConfig: encrypt(JSON.stringify(config)) })
+      .returning();
+    return toPublic(row);
+  });
 }
 
 async function requireChannel(projectId: string, channelId: string) {
@@ -177,13 +186,14 @@ export async function sendTestMessage(projectId: string, channelId: string): Pro
   }
 }
 
-export type DeliveryResult = { channelId: string; kind: ChannelKind; status: "sent" | "failed"; error: string | null };
+export type DeliveryResult = { channelId: string; kind: ChannelKind; status: "sent" | "failed" | "unknown"; error: string | null };
 
 // Sends to every enabled channel (or the selected ones) and records each outcome.
 export async function deliverLog(
   log: { id: string; title: string; content: string },
   projectId: string,
-  channelIds?: string[]
+  channelIds?: string[],
+  scheduleKey?: string
 ): Promise<DeliveryResult[]> {
   const db = getDb();
   const channels = await db
@@ -202,15 +212,72 @@ export async function deliverLog(
 
   const results = await Promise.all(
     channels.map(async (channel): Promise<DeliveryResult> => {
+      let deliveryId: string | undefined;
+      if (scheduleKey) {
+        const [claim] = await db
+          .insert(deliveries)
+          .values({ logId: log.id, channelId: channel.id, status: "sending", scheduleKey })
+          .onConflictDoNothing({ target: [deliveries.scheduleKey, deliveries.channelId] })
+          .returning({ id: deliveries.id });
+        if (!claim) {
+          const [previous] = await db
+            .select()
+            .from(deliveries)
+            .where(and(eq(deliveries.scheduleKey, scheduleKey), eq(deliveries.channelId, channel.id)))
+            .limit(1);
+          if (previous.status === "sending") {
+            const error = "The previous send may have been accepted; it was not retried.";
+            const [uncertain] = await db
+              .update(deliveries)
+              .set({ status: "unknown", error })
+              .where(and(eq(deliveries.id, previous.id), eq(deliveries.status, "sending")))
+              .returning({ status: deliveries.status, error: deliveries.error });
+            const current = uncertain ?? (await db.select({ status: deliveries.status, error: deliveries.error }).from(deliveries).where(eq(deliveries.id, previous.id)).limit(1))[0];
+            return {
+              channelId: channel.id,
+              kind: channel.kind,
+              status: !current || current.status === "sending" ? "unknown" : current.status,
+              error: current?.error ?? error,
+            };
+          }
+          if (previous.status !== "failed") {
+            return { channelId: channel.id, kind: channel.kind, status: previous.status, error: previous.error };
+          }
+          const [retry] = await db
+            .update(deliveries)
+            .set({ status: "sending", error: null, sentAt: new Date() })
+            .where(and(eq(deliveries.id, previous.id), eq(deliveries.status, "failed")))
+            .returning({ id: deliveries.id });
+          if (!retry) return { channelId: channel.id, kind: channel.kind, status: "failed", error: previous.error };
+          deliveryId = retry.id;
+        } else {
+          deliveryId = claim.id;
+        }
+      }
+
       let error: string | null = null;
+      let status: DeliveryResult["status"] = "sent";
       try {
         await sendMessage(channel.kind, readConfig(channel), { title: log.title, markdown: log.content });
       } catch (err) {
         error = err instanceof DeliveryError ? err.message : "Unexpected error while sending.";
+        status = err instanceof DeliveryError && err.unknown ? "unknown" : "failed";
         if (!(err instanceof DeliveryError)) console.error("Delivery failed:", err);
       }
-      const status = error ? "failed" : "sent";
-      await db.insert(deliveries).values({ logId: log.id, channelId: channel.id, status, error });
+      if (deliveryId) {
+        const [updated] = await db
+          .update(deliveries)
+          .set({ status, error, sentAt: new Date() })
+          .where(and(eq(deliveries.id, deliveryId), eq(deliveries.status, "sending")))
+          .returning({ status: deliveries.status, error: deliveries.error });
+        if (!updated) {
+          const [current] = await db.select({ status: deliveries.status, error: deliveries.error }).from(deliveries).where(eq(deliveries.id, deliveryId)).limit(1);
+          status = current?.status === "sending" || !current ? "unknown" : current.status;
+          error = current?.error ?? "The previous send may have been accepted; it was not retried.";
+        }
+      } else {
+        await db.insert(deliveries).values({ logId: log.id, channelId: channel.id, status, error });
+      }
       return { channelId: channel.id, kind: channel.kind, status, error };
     })
   );

@@ -62,11 +62,17 @@ export function toSlackMrkdwn(markdown: string): string {
     .join("\n");
 }
 
+function escapeSlackMentions(text: string): string {
+  return text.replace(/<!(?:channel|here|everyone|subteam\^[A-Z0-9]+(?:\|[^>]*)?)>|<@(?:[UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (mention) =>
+    `&lt;${mention.slice(1, -1)}&gt;`
+  );
+}
+
 // Inline code spans pass through untouched.
 function convertSegments(line: string): string {
   return line
     .split(/(`[^`]*`)/g)
-    .map((part, i) => (i % 2 === 1 ? part : convertInline(part)))
+    .map((part, i) => (i % 2 === 1 ? part : escapeSlackMentions(convertInline(part))))
     .join("");
 }
 

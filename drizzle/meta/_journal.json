@@ -29,6 +29,27 @@
       "when": 1793027424596,
       "tag": "0003_custom_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793719484888,
+      "tag": "0004_natural_runaways",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793721264660,
+      "tag": "0005_minor_butterfly",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793721744148,
+      "tag": "0006_curvy_master_mold",
+      "breakpoints": true
     }
   ]
 }
