@@ -101,6 +101,12 @@ describe("updateLogSchema", () => {
     expect(updateLogSchema.safeParse({}).success).toBe(false);
     expect(updateLogSchema.safeParse({ pinned: true }).success).toBe(true);
   });
+
+  it("requires the editor's original content when saving changed content", () => {
+    expect(updateLogSchema.safeParse({ content: "updated" }).success).toBe(false);
+    expect(updateLogSchema.safeParse({ content: "updated", expectedContent: "original" }).success).toBe(true);
+    expect(updateLogSchema.safeParse({ title: "renamed" }).success).toBe(true);
+  });
 });
 
 describe("logListQuerySchema", () => {

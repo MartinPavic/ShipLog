@@ -1,6 +1,6 @@
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { projects, scheduledRuns } from "@/db/schema";
+import { projects, scheduledRuns, shipLogs } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { deliverLog } from "@/lib/delivery";
 import { generateLog } from "@/lib/generation";
@@ -10,6 +10,7 @@ import { isOrgMember } from "@/lib/orgs";
 import { getPlanLimits } from "@/lib/plans";
 import type { Project } from "@/lib/projects";
 import { currentSlot } from "@/lib/schedule";
+import { getLog } from "@/lib/logs";
 
 export const MAX_ATTEMPTS = 3;
 const STALE_RUNNING_MS = 30 * 60 * 1000;
@@ -22,7 +23,11 @@ const SKIPPED = new Set([...ACTIONABLE, "NO_ACTIVITY", "CREATOR_LEFT"]);
 const TRANSIENT = new Set(["AI_UNAVAILABLE", "AI_TIMEOUT", "AI_RATE_LIMIT", "GITHUB_UNAVAILABLE", "ORG_CHECK_FAILED"]);
 
 // Takes the slot atomically: first claim, or a re-claim of a retryable / crashed run. Returns the attempt number.
-export async function claimSlot(projectId: string, slot: string, now = new Date()): Promise<number | null> {
+export async function claimSlot(
+  projectId: string,
+  slot: string,
+  now = new Date()
+): Promise<{ attempts: number; logId: string | null } | null> {
   const stale = new Date(now.getTime() - STALE_RUNNING_MS);
   const rows = await getDb()
     .insert(scheduledRuns)
@@ -38,8 +43,8 @@ export async function claimSlot(projectId: string, slot: string, now = new Date(
         )
       ),
     })
-    .returning({ attempts: scheduledRuns.attempts });
-  return rows[0]?.attempts ?? null;
+    .returning({ attempts: scheduledRuns.attempts, logId: scheduledRuns.logId });
+  return rows[0] ?? null;
 }
 
 async function finishRun(
@@ -50,9 +55,16 @@ async function finishRun(
 ) {
   await getDb()
     .update(scheduledRuns)
-    .set({ status, logId: extra.logId ?? null, error: extra.error ?? null, updatedAt: new Date() })
+    .set({ status, ...(extra.logId ? { logId: extra.logId } : {}), error: extra.error ?? null, updatedAt: new Date() })
     .where(and(eq(scheduledRuns.projectId, projectId), eq(scheduledRuns.slot, slot)));
 }
+
+  async function saveRunLog(projectId: string, slot: string, logId: string): Promise<void> {
+    await getDb()
+    .update(scheduledRuns)
+    .set({ logId, updatedAt: new Date() })
+    .where(and(eq(scheduledRuns.projectId, projectId), eq(scheduledRuns.slot, slot)));
+  }
 
 export type RunOutcome = "generated" | "skipped" | "failed" | "retry";
 
@@ -73,7 +85,7 @@ async function assertCreatorIsMember(orgId: string, userId: string) {
   }
 }
 
-async function runProject(project: Project, slot: string, attempt: number): Promise<RunOutcome> {
+async function runProject(project: Project, slot: string, attempt: number, existingLogId: string | null): Promise<RunOutcome> {
   const schedule = project.schedule!;
   const owner: Owner = {
     userId: project.createdBy,
@@ -91,13 +103,26 @@ async function runProject(project: Project, slot: string, attempt: number): Prom
   try {
     // A removed member's GitHub token must not keep acting on the organization's behalf.
     if (owner.orgId) await assertCreatorIsMember(owner.orgId, owner.userId);
-    const log = await generateLog({ owner, project, period: { days: schedule.periodDays } });
+    const scheduleKey = `${project.id}:${slot}`;
+    const [savedRunLog] = existingLogId
+      ? []
+      : await getDb()
+          .select({ id: shipLogs.id })
+          .from(shipLogs)
+          .where(and(eq(shipLogs.projectId, project.id), eq(shipLogs.scheduleKey, scheduleKey)))
+          .limit(1);
+            const savedLogId = existingLogId ?? savedRunLog?.id;
+            const existingLog = savedLogId ? await getLog(project.ownerId, savedLogId) : null;
+    const log = existingLog?.status === "ready"
+      ? existingLog
+      : await generateLog({ owner, project, period: { days: schedule.periodDays }, scheduleKey });
+    await saveRunLog(project.id, slot, log.id);
 
     let note: string | null = null;
     if (schedule.autoDeliver && limits.delivery) {
       try {
-        const results = await deliverLog(log, project.id);
-        const failed = results.filter((r) => r.status === "failed").length;
+        const results = await deliverLog(log, project.id, undefined, `${project.id}:${slot}`);
+        const failed = results.filter((r) => r.status !== "sent").length;
         if (failed) note = `${failed} of ${results.length} deliveries failed.`;
       } catch (err) {
         note = err instanceof ApiError ? err.message : "Delivery failed.";
@@ -143,9 +168,33 @@ export async function runScheduled(
     );
 
   const summary: SchedulerSummary = { checked: candidates.length, due: 0, generated: 0, skipped: 0, failed: 0, retry: 0 };
+  const retryBefore = new Date(now.getTime() - STALE_RUNNING_MS);
+  const retryRows = candidates.length
+    ? await getDb()
+        .select({ projectId: scheduledRuns.projectId, slot: scheduledRuns.slot, logId: scheduledRuns.logId })
+        .from(scheduledRuns)
+        .where(
+          and(
+            inArray(scheduledRuns.projectId, candidates.map((project) => project.id)),
+            lt(scheduledRuns.attempts, MAX_ATTEMPTS),
+            or(
+              eq(scheduledRuns.status, "retry"),
+              and(eq(scheduledRuns.status, "running"), lt(scheduledRuns.updatedAt, retryBefore))
+            )
+          )
+        )
+    : [];
+  const retries = new Map<string, Map<string, string | null>>();
+  for (const row of retryRows) {
+    const slots = retries.get(row.projectId) ?? new Map<string, string | null>();
+    slots.set(row.slot, row.logId);
+    retries.set(row.projectId, slots);
+  }
   const due = candidates.flatMap((p) => {
+    const slots = new Map(retries.get(p.id) ?? []);
     const slot = p.schedule ? currentSlot(p.schedule, now) : null;
-    return slot ? [{ project: p, slot }] : [];
+    if (slot && !slots.has(slot)) slots.set(slot, null);
+    return [...slots].map(([dueSlot, logId]) => ({ project: p, slot: dueSlot, logId }));
   });
   summary.due = due.length;
 
@@ -153,11 +202,11 @@ export async function runScheduled(
   const queue = [...due];
   const worker = async () => {
     while (queue.length && Date.now() - started < deadlineMs) {
-      const { project, slot } = queue.shift()!;
-      const attempt = await claimSlot(project.id, slot, now);
-      if (attempt === null) continue;
+      const { project, slot, logId } = queue.shift()!;
+      const claim = await claimSlot(project.id, slot, now);
+      if (claim === null) continue;
       try {
-        summary[await runProject(project, slot, attempt)]++;
+        summary[await runProject(project, slot, claim.attempts, claim.logId ?? logId)]++;
       } catch (err) {
         console.error(`Scheduled run for ${project.id} crashed:`, err);
         await finishRun(project.id, slot, "failed", { error: "Unexpected error." }).catch(() => undefined);

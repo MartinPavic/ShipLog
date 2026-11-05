@@ -13,13 +13,13 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: 
   const { token } = await ctx.params;
   if (!isShareToken(token)) throw new ApiError(404, "This link is not available.", "NOT_FOUND");
   const { password } = await parseBody(req, unlockSchema);
+  const log = await getSharedLog(token);
+  if (!log?.passwordHash) throw new ApiError(404, "This link is not available.", "NOT_FOUND");
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
   await enforceRateLimit(`unlock:${token}:${ip}`, 10, FIFTEEN_MIN, "password attempts");
   await enforceRateLimit(`unlock:${token}`, 100, HOUR, "password attempts");
 
-  const log = await getSharedLog(token);
-  if (!log?.passwordHash) throw new ApiError(404, "This link is not available.", "NOT_FOUND");
   if (!(await verifyPassword(password, log.passwordHash))) {
     throw new ApiError(401, "Incorrect password.", "BAD_PASSWORD");
   }

@@ -24,7 +24,8 @@ export const PATCH = handle(async (req: Request, ctx: Ctx) => {
   const owner = await getOwner();
   const log = await loadVisibleLog(owner.ownerId, (await ctx.params).id);
   const patch = await parseBody(req, updateLogSchema);
-  return NextResponse.json({ log: await updateLog(owner.userId, log, patch) });
+  const { expectedContent, ...changes } = patch;
+  return NextResponse.json({ log: await updateLog(owner.userId, log, changes, expectedContent ?? log.content) });
 });
 
 export const DELETE = handle(async (_req: Request, ctx: Ctx) => {

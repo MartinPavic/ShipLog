@@ -4,6 +4,7 @@ const EXCLUDED_PREFIXES = [
   ".git/",
   ".next/",
   ".neon/",
+  "docs/superpowers/",
   "node_modules/",
   "dist/",
   // Seller-only tooling and notes.

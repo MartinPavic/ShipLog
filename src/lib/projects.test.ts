@@ -129,4 +129,41 @@ describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () =>
     expect(versions[0].content).toBe("contains needle text");
     expect((await getLog(ownerB.ownerId, log.id))!.content).toBe("rewritten");
   });
+
+  it("rejects one of two edits based on the same saved content", async () => {
+    const { getDb } = await import("@/db");
+    const { shipLogs } = await import("@/db/schema");
+    const { createProject } = await import("./projects");
+    const { createProjectSchema } = await import("./validation");
+    const { getLog, listVersions, updateLog } = await import("./logs");
+    const project = await createProject(ownerA, createProjectSchema.parse({ name: "Concurrent edits" }), 5);
+    const [row] = await getDb().insert(shipLogs).values({
+      projectId: project.id,
+      ownerId: ownerA.ownerId,
+      createdBy: ownerA.userId,
+      title: "Shared draft",
+      content: "original",
+      periodStart: new Date("2026-10-01"),
+      periodEnd: new Date("2026-10-07"),
+      template: "weekly_update",
+      status: "ready",
+    }).returning();
+    const original = (await getLog(ownerA.ownerId, row.id))!;
+
+    const results = await Promise.allSettled([
+      updateLog(ownerA.userId, original, { content: "edit one" }, original.content),
+      updateLog(ownerA.userId, original, { content: "edit two" }, original.content),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toMatchObject([
+      { reason: { code: "CONFLICT" } },
+    ]);
+    expect((await listVersions(row.id)).map((version) => version.content)).toEqual(["original"]);
+    const saved = (await getLog(ownerA.ownerId, row.id))!;
+    expect(["edit one", "edit two"]).toContain(saved.content);
+    await expect(updateLog(ownerA.userId, saved, { content: "stale browser value" }, original.content)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
 });

@@ -70,5 +70,8 @@ export async function streamGeneration(
   if (at !== -1) {
     throw new GenerationError(raw.slice(at + STREAM_ERROR_MARKER.length) || "Generation failed.", logId);
   }
+    if (visibleText(raw).length !== raw.length) {
+      throw new GenerationError("The generation stream ended unexpectedly. Please try again.", logId);
+    }
   return { logId, content: raw };
 }

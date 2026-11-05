@@ -10,12 +10,13 @@
  *   npm run setup -- --check --db         also test the database connection
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { formatEnvReport, type EnvReport } from "../src/env";
 import { checkEnvironment, MIN_NODE } from "./lib/check";
 import { parseEnv, randomSecret, setEnvValue } from "./lib/env-file";
+import { assertCommandSucceeded, savePrivateEnv, securePrivateEnv } from "./lib/setup";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
 const EXAMPLE_FILE = resolve(process.cwd(), ".env.example");
@@ -92,6 +93,7 @@ async function interactive() {
 
   let text: string;
   if (existsSync(ENV_FILE)) {
+    securePrivateEnv(ENV_FILE);
     text = readFileSync(ENV_FILE, "utf8");
     console.log("Using the existing .env.local. Nothing is replaced without asking.\n");
   } else {
@@ -104,7 +106,7 @@ async function interactive() {
   // Saved after every change so Ctrl-C never loses progress. The file holds secrets, so it stays private.
   const save = (key: string, value: string) => {
     text = setEnvValue(text, key, value);
-    writeFileSync(ENV_FILE, text, { mode: 0o600 });
+    savePrivateEnv(ENV_FILE, text);
   };
 
   async function prompt(key: string, label: string) {
@@ -192,7 +194,7 @@ async function interactive() {
       }
     }
     if (dbReady && (await confirm("Add demo data? (Sign up in the app first, then it is added to your newest account.)", false))) {
-      spawnSync("npx", ["tsx", "scripts/seed.ts"], { stdio: "inherit" });
+      assertCommandSucceeded("Demo data seeding", spawnSync("npx", ["tsx", "scripts/seed.ts"], { stdio: "inherit" }));
     }
 
     console.log("\nStill to do by hand:");

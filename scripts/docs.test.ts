@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import { parseEnv } from "./lib/env-file";
 
 const root = resolve(__dirname, "..");
-const docFiles = ["README.md", "CHANGELOG.md", ...readdirSync(resolve(root, "docs")).map((f) => `docs/${f}`)];
+const markdownFiles = (directory: string): string[] =>
+  readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    return entry.isDirectory() ? markdownFiles(path) : entry.isFile() && entry.name.endsWith(".md") ? [path] : [];
+  });
+const docFiles = ["README.md", "CHANGELOG.md", ...markdownFiles("docs")];
 const read = (file: string) => readFileSync(resolve(root, file), "utf8");
 
 // GitHub's heading anchors: lowercase, punctuation dropped, spaces to hyphens.
@@ -21,6 +26,7 @@ const headingsOf = (file: string) =>
 
 describe("documentation", () => {
   it("only links to files and headings that exist", () => {
+    expect(docFiles).toContain("docs/superpowers/specs/2026-10-30-dashboard-workflow-design.md");
     const problems: string[] = [];
     for (const file of docFiles) {
       const text = read(file).replace(/```[\s\S]*?```/g, "");

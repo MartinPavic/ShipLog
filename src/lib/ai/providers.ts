@@ -166,17 +166,24 @@ function parseJson(provider: AiProvider, raw: string): Record<string, unknown> {
 async function* readTextDeltas(provider: AiProvider, body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const unavailable = () =>
     new ApiError(502, `${PROVIDER_LABELS[provider]} stopped responding mid-way. Try again.`, "AI_UNAVAILABLE");
+  let ended = false;
 
   try {
     for await (const evt of parseSse(body)) {
       if (provider === "anthropic") {
         if (evt.event === "error") throw unavailable();
-        if (evt.event === "message_stop") return;
+        if (evt.event === "message_stop") {
+          ended = true;
+          break;
+        }
         if (evt.event !== "content_block_delta") continue;
         const delta = parseJson(provider, evt.data).delta as { type?: string; text?: string } | undefined;
         if (delta?.type === "text_delta" && delta.text) yield delta.text;
       } else {
-        if (evt.data === "[DONE]") return;
+        if (evt.data === "[DONE]") {
+          ended = true;
+          break;
+        }
         const json = parseJson(provider, evt.data);
         if (json.error) throw unavailable();
         const choices = json.choices as { delta?: { content?: string | null } }[] | undefined;
@@ -184,6 +191,7 @@ async function* readTextDeltas(provider: AiProvider, body: ReadableStream<Uint8A
         if (text) yield text;
       }
     }
+    if (!ended) throw unavailable();
   } catch (err) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new ApiError(504, `${PROVIDER_LABELS[provider]} took too long to respond. Try again.`, "AI_TIMEOUT");

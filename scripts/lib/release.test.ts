@@ -21,6 +21,7 @@ describe("isExcluded", () => {
       "scripts/package-release.ts", "scripts/lib/release.ts", "scripts/lib/release.test.ts", "scripts/migrate-clerk-metadata.ts",
       "scripts/scan-secrets.ts", ".githooks/pre-commit",
       ".env", ".env.local", ".env.production", "sub/.env.local", ".DS_Store", "tsconfig.tsbuildinfo", "./PLAN.md",
+      "docs/superpowers/specs/internal.md", "docs/superpowers/plans/internal.md",
     ]) {
       expect(isExcluded(path), path).toBe(true);
     }

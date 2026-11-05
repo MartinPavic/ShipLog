@@ -1,6 +1,6 @@
 import { and, eq, lt } from "drizzle-orm";
 import { getDb } from "@/db";
-import { shipLogVersions, shipLogs } from "@/db/schema";
+import { shipLogVersions, shipLogs, usageReservations } from "@/db/schema";
 import { resolveAiAccess, type AiAccess } from "@/lib/ai/access";
 import { complete, openCompletionStream } from "@/lib/ai/providers";
 import { buildSystemPrompt, buildUserPrompt, defaultLogTitle } from "@/lib/ai/templates";
@@ -11,7 +11,7 @@ import type { ShipLog } from "@/lib/logs";
 import type { Owner } from "@/lib/owner";
 import type { Project } from "@/lib/projects";
 import { getTemplate, requireTemplate } from "@/lib/templates";
-import { releaseGeneration, reserveGeneration, type Reservation } from "@/lib/usage";
+import { finalizeGeneration, releaseGeneration, reserveGeneration, type Reservation } from "@/lib/usage";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STALE_GENERATION_MS = 10 * 60 * 1000;
@@ -32,6 +32,7 @@ type GenerateInput = {
   project: Project;
   period?: PeriodInput;
   template?: string;
+  scheduleKey?: string;
   // Regenerating keeps the log's period and saves the previous text as a version.
   existing?: ShipLog;
 };
@@ -112,27 +113,50 @@ async function saveGenerated(p: Prepared, content: string, logId?: string) {
   if (existing) {
     return db.transaction(async (tx) => {
       await tx.insert(shipLogVersions).values({ logId: existing.id, content: existing.content, createdBy: owner.userId });
-      const [row] = await tx.update(shipLogs).set(generated).where(eq(shipLogs.id, existing.id)).returning();
+      const [row] = await tx
+        .update(shipLogs)
+        .set(generated)
+        .where(and(eq(shipLogs.id, existing.id), eq(shipLogs.content, existing.content)))
+        .returning();
+      if (!row) throw new ApiError(409, "This report changed while it was being regenerated. Reload and try again.", "CONFLICT");
+      await tx.delete(usageReservations).where(eq(usageReservations.id, p.reservation.id));
       return row;
     });
   }
   if (logId) {
-    const [row] = await db.update(shipLogs).set(generated).where(eq(shipLogs.id, logId)).returning();
-    return row;
+    return db.transaction(async (tx) => {
+      const [row] = await tx.update(shipLogs).set(generated).where(eq(shipLogs.id, logId)).returning();
+      if (!row) throw new ApiError(404, "Log not found.", "NOT_FOUND");
+      await tx.delete(usageReservations).where(eq(usageReservations.id, p.reservation.id));
+      return row;
+    });
   }
-  const [row] = await db
-    .insert(shipLogs)
-    .values({
-      ...generated,
-      projectId: project.id,
-      ownerId: owner.ownerId,
-      createdBy: owner.userId,
-      title: defaultLogTitle(p.templateLabel, p.period.start, p.period.end),
-      periodStart: p.period.start,
-      periodEnd: p.period.end,
-    })
-    .returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const insert = tx
+      .insert(shipLogs)
+      .values({
+        ...generated,
+        projectId: project.id,
+        ownerId: owner.ownerId,
+        createdBy: owner.userId,
+        title: defaultLogTitle(p.templateLabel, p.period.start, p.period.end),
+        periodStart: p.period.start,
+        periodEnd: p.period.end,
+        scheduleKey: p.input.scheduleKey ?? null,
+      });
+    const [row] = p.input.scheduleKey
+      ? await insert.onConflictDoNothing({ target: shipLogs.scheduleKey }).returning()
+      : await insert.returning();
+    if (!row && p.input.scheduleKey) {
+      const [existingLog] = await tx.select().from(shipLogs).where(eq(shipLogs.scheduleKey, p.input.scheduleKey)).limit(1);
+      if (!existingLog) throw new ApiError(409, "The scheduled report could not be recovered.", "CONFLICT");
+      await tx.delete(usageReservations).where(eq(usageReservations.id, p.reservation.id));
+      return existingLog;
+    }
+    if (!row) throw new ApiError(500, "Could not save generated report.", "INTERNAL");
+    await tx.delete(usageReservations).where(eq(usageReservations.id, p.reservation.id));
+    return row;
+  });
 }
 
 // Non-streaming path, used by scheduled runs.
@@ -229,6 +253,7 @@ export async function startStreamingGeneration(input: GenerateInput): Promise<St
           await db.update(shipLogs).set({ status: "failed", error: message }).where(eq(shipLogs.id, id));
         }
         if (refund) await releaseGeneration(p.reservation);
+        else await finalizeGeneration(p.reservation);
       },
     };
   } catch (err) {

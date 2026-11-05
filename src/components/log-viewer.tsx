@@ -41,6 +41,7 @@ export function LogViewer({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(log.title);
   const [content, setContent] = useState(log.content);
+  const [baseContent, setBaseContent] = useState(log.content);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [limitReached, setLimitReached] = useState(false);
@@ -61,7 +62,8 @@ export function LogViewer({
 
   const save = () =>
     run(async () => {
-      await apiRequest(`/api/logs/${log.id}`, "PATCH", { title, content });
+      await apiRequest(`/api/logs/${log.id}`, "PATCH", { title, content, expectedContent: baseContent });
+      setBaseContent(content);
       setEditing(false);
       router.refresh();
     });
@@ -123,6 +125,7 @@ export function LogViewer({
                     setEditing(false);
                     setTitle(log.title);
                     setContent(log.content);
+                    setBaseContent(log.content);
                   }}
                 >
                   Cancel
@@ -130,7 +133,7 @@ export function LogViewer({
               </>
             ) : (
               <>
-                <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                <Button size="sm" variant="outline" onClick={() => { setBaseContent(log.content); setEditing(true); }}>
                   Edit
                 </Button>
                 <Button size="sm" variant="outline" disabled={busy} onClick={togglePin}>

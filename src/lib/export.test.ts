@@ -26,6 +26,17 @@ describe("toSlackMrkdwn", () => {
     expect(toSlackMrkdwn("**Done**: shipped")).toBe("*Done*: shipped");
     expect(toSlackMrkdwn("2 * 3 * 4")).toBe("2 * 3 * 4");
   });
+
+  it("renders Slack broadcast mentions as literal text", () => {
+    expect(toSlackMrkdwn("Notify <!channel>, <!here> and <!everyone>.")).toBe(
+      "Notify &lt;!channel&gt;, &lt;!here&gt; and &lt;!everyone&gt;."
+    );
+  });
+
+  it("renders Slack user and group mentions as literal text but preserves inline code", () => {
+    expect(toSlackMrkdwn("Ping <@U012ABC>, <@W012ABC|alice>, <!subteam^S012ABC|@ops> and ` <@U012ABC> `."))
+      .toBe("Ping &lt;@U012ABC&gt;, &lt;@W012ABC|alice&gt;, &lt;!subteam^S012ABC|@ops&gt; and ` <@U012ABC> `.");
+  });
 });
 
 describe("toHtml", () => {

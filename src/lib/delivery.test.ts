@@ -229,10 +229,96 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       }
       const res = await addChannel({ kind: "discord", webhookUrl: DISCORD }, crowded.id);
       expect(res.status).toBe(400);
+
+      const concurrent = await createProject(proOwner, createProjectSchema.parse({ name: "Concurrent channels" }), 10);
+      for (let i = 0; i < 9; i++) {
+        expect((await addChannel({ kind: "discord", webhookUrl: DISCORD }, concurrent.id)).status).toBe(201);
+      }
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => addChannel({ kind: "discord", webhookUrl: DISCORD }, concurrent.id))
+      );
+      expect(results.filter((result) => result.status === 201)).toHaveLength(1);
+      expect(results.filter((result) => result.status === 400)).toHaveLength(9);
     });
   });
 
   describe("sending", () => {
+    it("records a webhook timeout as unknown, not a definite failure", async () => {
+      const { channel } = await (await addChannel({ kind: "slack", webhookUrl: SLACK })).json();
+      const log = await insertLog();
+      behaviour["hooks.slack.com"] = () => { throw new Error("connection reset after request"); };
+
+      const response = await deliver(log.id, { channelIds: [channel.id] });
+      const { results } = await response.json();
+
+      expect(results).toMatchObject([{ status: "unknown", error: "Could not confirm delivery to Slack." }]);
+      const { getDb } = await import("@/db");
+      const { deliveryChannels } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await getDb().delete(deliveryChannels).where(eq(deliveryChannels.id, channel.id));
+    });
+
+    it("records an email transport error as unknown but provider rejection as failed", async () => {
+      const { createProject } = await import("./projects");
+      const project = await createProject(proOwner, (await import("./validation")).createProjectSchema.parse({ name: "Email uncertainty" }), 10);
+      const { channel } = await (await addChannel({ kind: "email", recipients: ["person@example.com"] }, project.id)).json();
+      const log = await insertLog(project.id);
+      behaviour["api.resend.com"] = () => { throw new Error("connection reset after request"); };
+      const { deliverLog } = await import("./delivery");
+
+      expect(await deliverLog(log, project.id, [channel.id])).toMatchObject([{ status: "unknown" }]);
+
+      behaviour["api.resend.com"] = () => new Response(JSON.stringify({ name: "validation_error", message: "invalid recipient", statusCode: 422 }), { status: 422 });
+      expect(await deliverLog(log, project.id, [channel.id])).toMatchObject([{ status: "failed" }]);
+    });
+
+    it("does not resend a scheduled delivery left in progress after a process crash", async () => {
+      const { createProject } = await import("./projects");
+      const { createProjectSchema } = await import("./validation");
+      const project = await createProject(proOwner, createProjectSchema.parse({ name: "Interrupted delivery" }), 10);
+      const { channel } = await (await addChannel({ kind: "slack", webhookUrl: SLACK }, project.id)).json();
+      const log = await insertLog(project.id);
+      const { getDb } = await import("@/db");
+      const { deliveries } = await import("@/db/schema");
+      await getDb().insert(deliveries).values({
+        logId: log.id,
+        channelId: channel.id,
+        status: "sending",
+        scheduleKey: `${project.id}:2026-10-14`,
+      });
+      const callsBefore = calls.length;
+      const { deliverLog } = await import("./delivery");
+
+      const results = await deliverLog(log, project.id, undefined, `${project.id}:2026-10-14`);
+
+      expect(calls).toHaveLength(callsBefore);
+      expect(results).toMatchObject([{ status: "unknown" }]);
+      const { eq } = await import("drizzle-orm");
+      const [row] = await getDb().select().from(deliveries).where(eq(deliveries.scheduleKey, `${project.id}:2026-10-14`));
+      expect(row.status).toBe("unknown");
+    });
+
+    it("retries a definite scheduled HTTP failure but not an uncertain send", async () => {
+      const { createProject } = await import("./projects");
+      const project = await createProject(proOwner, (await import("./validation")).createProjectSchema.parse({ name: "Retry delivery" }), 10);
+      const { channel } = await (await addChannel({ kind: "slack", webhookUrl: SLACK }, project.id)).json();
+      const log = await insertLog(project.id);
+      const scheduleKey = `${project.id}:2026-10-14`;
+      const { deliverLog } = await import("./delivery");
+      behaviour["hooks.slack.com"] = () => new Response("rate limited", { status: 429 });
+      expect(await deliverLog(log, project.id, undefined, scheduleKey)).toMatchObject([{ status: "failed" }]);
+
+      behaviour["hooks.slack.com"] = () => new Response("ok");
+      expect(await deliverLog(log, project.id, undefined, scheduleKey)).toMatchObject([{ status: "sent" }]);
+      expect(calls.filter((call) => call.url.includes("hooks.slack.com"))).toHaveLength(2);
+
+      const { getDb } = await import("@/db");
+      const { deliveries } = await import("@/db/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [row] = await getDb().select().from(deliveries).where(and(eq(deliveries.scheduleKey, scheduleKey), eq(deliveries.channelId, channel.id)));
+      expect(row.status).toBe("sent");
+    });
+
     it("rejects email channels when email isn't configured", async () => {
       delete process.env.RESEND_API_KEY;
       const res = await addChannel({ kind: "email", recipients: ["a@b.co"] });
@@ -301,13 +387,13 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       expect((await listDeliveries(log.id)).filter((h) => h.status === "failed")).toHaveLength(2);
     });
 
-    it("treats redirects and network errors as failures", async () => {
+    it("treats redirects and network errors as unknown delivery outcomes", async () => {
       behaviour["hooks.slack.com"] = () => {
         throw new TypeError("fetch failed");
       };
       const log = await insertLog();
       const { results } = await (await deliver(log.id, { channelIds: [ids.slack] })).json();
-      expect(results[0]).toMatchObject({ status: "failed", error: "Could not reach Slack." });
+      expect(results[0]).toMatchObject({ status: "unknown", error: "Could not confirm delivery to Slack." });
 
       const init = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
       expect(init.redirect).toBe("error");

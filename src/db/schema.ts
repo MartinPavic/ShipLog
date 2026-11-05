@@ -49,9 +49,24 @@ export const usageCounters = pgTable(
   (t) => [primaryKey({ columns: [t.ownerId, t.period, t.kind] })]
 );
 
+export const usageReservations = pgTable(
+  "usage_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: text("owner_id").notNull(),
+    period: text("period").notNull(),
+    kind: text("kind", { enum: ["managed", "byok"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("usage_reservations_owner_created_idx").on(t.ownerId, t.createdAt)]
+);
+
 export const stripeEvents = pgTable("stripe_events", {
   id: text("id").primaryKey(),
+  status: text("status", { enum: ["processing", "processed"] }).notNull().default("processed"),
+  claimToken: text("claim_token"),
   processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const githubConnections = pgTable("github_connections", {
@@ -133,6 +148,7 @@ export const shipLogs = pgTable(
     periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
     periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
     template: text("template").notNull(),
+    scheduleKey: text("schedule_key"),
     provider: text("provider"),
     model: text("model"),
     status: text("status", { enum: ["generating", "ready", "failed"] })
@@ -151,6 +167,7 @@ export const shipLogs = pgTable(
     index("ship_logs_project_created_idx").on(t.projectId, t.createdAt.desc()),
     index("ship_logs_project_published_idx").on(t.projectId, t.publishedAt.desc()),
     uniqueIndex("ship_logs_share_token_idx").on(t.shareToken),
+    uniqueIndex("ship_logs_schedule_key_idx").on(t.scheduleKey),
   ]
 );
 
@@ -193,11 +210,12 @@ export const deliveries = pgTable(
     channelId: uuid("channel_id")
       .notNull()
       .references(() => deliveryChannels.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["sent", "failed"] }).notNull(),
+    status: text("status", { enum: ["sending", "sent", "failed", "unknown"] }).notNull(),
     error: text("error"),
+    scheduleKey: text("schedule_key"),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("deliveries_log_idx").on(t.logId)]
+  (t) => [index("deliveries_log_idx").on(t.logId), uniqueIndex("deliveries_schedule_channel_idx").on(t.scheduleKey, t.channelId)]
 );
 
 // Public handle for an owner, used in /p/<ownerSlug>/<projectSlug> changelog URLs.

@@ -105,7 +105,8 @@ export async function assertLogVisible(log: ShipLog, limits: Pick<PlanLimits, "v
 export async function updateLog(
   userId: string,
   log: ShipLog,
-  patch: { title?: string; content?: string; pinned?: boolean; published?: boolean }
+  patch: { title?: string; content?: string; pinned?: boolean; published?: boolean },
+  expectedContent = log.content
 ): Promise<ShipLog> {
   const { published, ...fields } = patch;
   if (published && log.status !== "ready") {
@@ -121,8 +122,13 @@ export async function updateLog(
     const [row] = await tx
       .update(shipLogs)
       .set({ ...fields, ...(publishedAt !== undefined ? { publishedAt } : {}) })
-      .where(eq(shipLogs.id, log.id))
+      .where(
+        expectedContent !== undefined
+          ? and(eq(shipLogs.id, log.id), eq(shipLogs.content, expectedContent))
+          : eq(shipLogs.id, log.id)
+      )
       .returning(publicColumns);
+    if (!row) throw new ApiError(409, "This report changed while you were editing. Reload and try again.", "CONFLICT");
     return row;
   });
 }
