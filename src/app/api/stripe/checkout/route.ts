@@ -19,9 +19,9 @@ const checkoutBodySchema = z.object({
 
 export const POST = handle(async (req: Request) => {
   assertFeatureEnabled("billing");
+  const owner = await requireAdmin();
   const variant = await parseBody(req, checkoutBodySchema);
   const priceId = stripePriceFor(variant);
-  const owner = await requireAdmin();
   const db = getDb();
 
   const session = await db.transaction(async (tx) => {
@@ -32,7 +32,11 @@ export const POST = handle(async (req: Request) => {
       .where(eq(billingAccounts.ownerId, owner.ownerId))
       .limit(1);
 
-    if (account && (account.status === "active" || account.status === "trialing")) {
+    const hasLiveSubscription =
+      account?.status === "active" ||
+      account?.status === "trialing" ||
+      (!!account?.stripeSubscriptionId && account.status !== "canceled" && account.status !== "incomplete_expired");
+    if (hasLiveSubscription) {
       throw new ApiError(
         409,
         "You already have an active subscription. Use the billing portal to change plan or AI mode.",

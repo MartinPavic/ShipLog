@@ -6,8 +6,13 @@ import { billingAccounts, stripeEvents } from "@/db/schema";
 import { entitlementForStripePrice } from "@/lib/stripe-prices";
 import { stripe } from "@/lib/stripe";
 
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(["canceled", "incomplete_expired"]);
+
 const idOf = (ref: string | { id: string } | null | undefined) =>
   typeof ref === "string" ? ref : (ref?.id ?? null);
+
+const isTerminalSubscriptionStatus = (status: string | null | undefined): boolean =>
+  !!status && TERMINAL_SUBSCRIPTION_STATUSES.has(status as Stripe.Subscription.Status);
 
 function entitlementFromSubscription(sub: Stripe.Subscription): { plan: "free" | "pro" | "ultra"; aiMode: "byok" | "managed" | null } {
   if (sub.status !== "active" && sub.status !== "trialing") {
@@ -91,7 +96,18 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
     };
 
     if (checkoutOwnerId && subscription) {
-      await saveSubscription(checkoutOwnerId, subscription);
+      const [account] = await tx
+        .select({ stripeSubscriptionId: billingAccounts.stripeSubscriptionId, status: billingAccounts.status })
+        .from(billingAccounts)
+        .where(eq(billingAccounts.ownerId, checkoutOwnerId))
+        .limit(1);
+      const hasDifferentLiveSubscription =
+        !!account?.stripeSubscriptionId &&
+        account.stripeSubscriptionId !== subscription.id &&
+        !isTerminalSubscriptionStatus(account.status);
+      if (!hasDifferentLiveSubscription) {
+        await saveSubscription(checkoutOwnerId, subscription);
+      }
     } else if (subscription) {
       const customerId = idOf(subscription.customer);
       const [account] = customerId
@@ -102,10 +118,14 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
         await saveSubscription(ownerId, subscription);
       }
     } else if (failedInvoice) {
-      await tx
-        .update(billingAccounts)
-        .set({ status: "past_due", plan: "free", aiMode: null, updatedAt: new Date() })
-        .where(and(eq(billingAccounts.stripeCustomerId, failedInvoice.customerId), eq(billingAccounts.stripeSubscriptionId, failedInvoice.subscriptionId)));
+      const [account] = await tx
+        .select({ ownerId: billingAccounts.ownerId })
+        .from(billingAccounts)
+        .where(and(eq(billingAccounts.stripeCustomerId, failedInvoice.customerId), eq(billingAccounts.stripeSubscriptionId, failedInvoice.subscriptionId)))
+        .limit(1);
+      if (!account) return true;
+      const currentSubscription = await retrieveCurrentSubscription(failedInvoice.subscriptionId);
+      await saveSubscription(account.ownerId, currentSubscription);
     }
     return true;
   });

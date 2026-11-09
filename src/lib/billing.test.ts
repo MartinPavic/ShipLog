@@ -221,6 +221,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       const sub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proManaged)] } });
       vi.spyOn((await stripeLib()).subscriptions, "retrieve")
         .mockResolvedValueOnce(sub as never)
+        .mockResolvedValueOnce({ ...sub, status: "past_due", metadata: {} } as never)
         .mockResolvedValueOnce({ ...sub, metadata: {}, items: { data: [recurringItem(PRICE_IDS.proManaged)] } } as never)
         .mockResolvedValueOnce({ ...sub, status: "canceled", metadata: {} } as never);
 
@@ -240,6 +241,30 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
       await deliver(event("customer.subscription.deleted", { ...sub, status: "canceled", metadata: {} }));
       expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null, status: "canceled", stripeCustomerId: customer });
+    });
+
+    it("does not demote from a stale payment_failed event when Stripe shows the subscription is recovered", async () => {
+      const owner = newOwner();
+      const customer = customerId();
+      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proManaged)] } });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(sub as never)
+        .mockResolvedValueOnce({ ...sub, status: "active" } as never);
+
+      await deliver(event("customer.subscription.updated", sub));
+      await deliver(event("invoice.payment_failed", {
+        id: "in_stale_failure",
+        customer,
+        parent: { type: "subscription_details", subscription_details: { subscription: sub.id } },
+      }));
+
+      expect(retrieve).toHaveBeenNthCalledWith(2, sub.id);
+      expect(await account(owner.ownerId)).toMatchObject({
+        plan: "pro",
+        aiMode: "managed",
+        status: "active",
+        stripeSubscriptionId: sub.id,
+      });
     });
 
     it("ignores a payment failure for a subscription that has been replaced", async () => {
@@ -267,7 +292,9 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       const owner = newOwner();
       const customer = customerId();
       const sub = subscription({ customer, metadata: { ownerId: owner.ownerId } });
-      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(sub as never)
+        .mockResolvedValueOnce({ ...sub, status: "past_due", metadata: {} } as never);
       await deliver(event("customer.subscription.updated", sub));
 
       await deliver(event("invoice.payment_failed", { id: "in_legacy", customer, subscription: sub.id }));
@@ -341,6 +368,44 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       await deliver(event("checkout.session.completed", { id: "cs_4", mode: "subscription", subscription: null, metadata: { ownerId: owner.ownerId } }));
       expect(retrieve).not.toHaveBeenCalled();
       expect(await account(owner.ownerId)).toBeUndefined();
+    });
+
+    it("does not let stale checkout completion overwrite an existing live subscription id", async () => {
+      const owner = newOwner();
+      const customer = customerId();
+      const currentSub = subscription({
+        id: "sub_current_live",
+        customer,
+        status: "active",
+        metadata: { ownerId: owner.ownerId },
+        items: { data: [recurringItem(PRICE_IDS.ultraManaged)] },
+      });
+      const staleSub = subscription({
+        id: "sub_stale_old",
+        customer,
+        status: "canceled",
+        metadata: { ownerId: owner.ownerId },
+        items: { data: [recurringItem(PRICE_IDS.proByok)] },
+      });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(currentSub as never)
+        .mockResolvedValueOnce(staleSub as never);
+
+      await deliver(event("customer.subscription.updated", currentSub));
+      await deliver(event("checkout.session.completed", {
+        id: "cs_stale_old",
+        mode: "subscription",
+        subscription: staleSub.id,
+        customer,
+        metadata: { ownerId: owner.ownerId },
+      }));
+
+      expect(await account(owner.ownerId)).toMatchObject({
+        plan: "ultra",
+        aiMode: "managed",
+        status: "active",
+        stripeSubscriptionId: currentSub.id,
+      });
     });
   });
 
@@ -618,6 +683,26 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       expect(s.customers).not.toHaveBeenCalled();
     });
 
+    it.each(["trialing", "past_due", "unpaid", "paused", "incomplete"]) (
+      "blocks owners with an existing non-terminal %s subscription and tells them to use the billing portal",
+      async (status) => {
+        current = newOwner();
+        await seedAccount(current.ownerId, {
+          plan: "pro",
+          status,
+          stripeCustomerId: customerId(),
+          stripeSubscriptionId: `sub_existing_${rand()}`,
+        });
+        const s = await spies();
+
+        const res = await checkout({ tier: "ultra", aiMode: "managed" });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+        expect(s.sessions).not.toHaveBeenCalled();
+        expect(s.customers).not.toHaveBeenCalled();
+      }
+    );
+
     it("lets a cancelled subscriber check out again with the same customer", async () => {
       current = newOwner();
       const existing = customerId();
@@ -642,6 +727,28 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       expect((await portal()).status).toBe(403);
       expect(s.sessions).not.toHaveBeenCalled();
       expect(s.portal).not.toHaveBeenCalled();
+    });
+
+    it("authorizes before body validation and price resolution", async () => {
+      const org = newOwner(true);
+      current = { ...org, userId: `test_u_${rand()}`, orgRole: "org:member" };
+      const s = await spies();
+      const savedProManaged = process.env.STRIPE_PRICE_PRO_MANAGED_ID;
+      delete process.env.STRIPE_PRICE_PRO_MANAGED_ID;
+
+      try {
+        const invalidBody = await checkout({ tier: "pro" });
+        expect(invalidBody.status).toBe(403);
+
+        const missingConfig = await checkout({ tier: "pro", aiMode: "managed" });
+        expect(missingConfig.status).toBe(403);
+
+        expect(s.sessions).not.toHaveBeenCalled();
+        expect(s.customers).not.toHaveBeenCalled();
+      } finally {
+        if (savedProManaged === undefined) delete process.env.STRIPE_PRICE_PRO_MANAGED_ID;
+        else process.env.STRIPE_PRICE_PRO_MANAGED_ID = savedProManaged;
+      }
     });
 
     it("opens the billing portal only for owners that have a customer", async () => {
