@@ -8,9 +8,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/config/site";
 import { features } from "@/env";
+import { pricingSectionContent } from "@/lib/plans";
 
 export default function Home() {
-  const showPricing = features().billing;
+  const on = features();
+  const showPricing = on.billing;
+  const pricingContent = pricingSectionContent(on);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -133,7 +136,7 @@ export default function Home() {
         </section>
         <WaveDivider flip className="text-secondary" />
 
-        {showPricing && <PricingSection />}
+        {showPricing && <PricingSection content={pricingContent} />}
 
         <section className="container mx-auto max-w-2xl px-4 py-16">
           <h2 className="mb-6 text-center text-2xl font-bold">Questions</h2>

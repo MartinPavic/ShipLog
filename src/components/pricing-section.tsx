@@ -5,34 +5,7 @@ import { Show, SignInButton } from "@clerk/nextjs";
 import { useMemo, useState } from "react";
 import { UpgradeButtonForVariant } from "@/components/upgrade-button";
 import { Button } from "@/components/ui/button";
-import { siteConfig, type PaidTier } from "@/config/site";
-import { planHighlights, type AiMode } from "@/lib/plans";
-
-export type PaidAiMode = AiMode;
-
-type PaidCardCopy = {
-  price: number;
-  highlights: [string, string];
-  checkout: { tier: PaidTier; aiMode: PaidAiMode };
-};
-
-export function pricingCopyForMode(mode: PaidAiMode): { pro: PaidCardCopy; ultra: PaidCardCopy } {
-  const proHighlights = planHighlights("pro", mode);
-  const ultraHighlights = planHighlights("ultra", mode);
-
-  return {
-    pro: {
-      price: siteConfig.pricing.pro[mode],
-      highlights: [proHighlights[0]!, proHighlights[1]!],
-      checkout: { tier: "pro", aiMode: mode },
-    },
-    ultra: {
-      price: siteConfig.pricing.ultra[mode],
-      highlights: [ultraHighlights[0]!, ultraHighlights[1]!],
-      checkout: { tier: "ultra", aiMode: mode },
-    },
-  };
-}
+import { siteConfig, type PaidAiMode, type PricingSectionContent } from "@/config/site";
 
 function PlanCard({
   name,
@@ -71,38 +44,44 @@ const MODE_OPTIONS: Array<{ mode: PaidAiMode; label: string }> = [
   { mode: "managed", label: "Managed AI" },
 ];
 
-export function PricingSection() {
+export function PricingSection({ content }: { content: PricingSectionContent }) {
   const [mode, setMode] = useState<PaidAiMode>("byok");
   const { currency, interval, vatInclusiveLabel } = siteConfig.pricing;
-  const paid = useMemo(() => pricingCopyForMode(mode), [mode]);
+  const paid = useMemo(
+    () => (mode === "managed" && content.managed ? content.managed : content.byok),
+    [content.byok, content.managed, mode]
+  );
+  const modeOptions = content.managed ? MODE_OPTIONS : MODE_OPTIONS.filter((option) => option.mode === "byok");
 
   return (
     <section className="container mx-auto px-4 py-16 text-center">
       <h2 className="mb-3 text-2xl font-bold">Simple pricing</h2>
-      <p className="mb-3 text-muted-foreground">Free to try. Pro and Ultra unlock full history, scheduling, delivery, PDF export and teams.</p>
+      <p className="mb-3 text-muted-foreground">{content.summary}</p>
       <p className="mb-8 text-sm text-muted-foreground">{vatInclusiveLabel}</p>
 
-      <div className="mb-8 inline-flex items-center gap-2 rounded-md border bg-card p-1" role="group" aria-label="AI mode">
-        {MODE_OPTIONS.map((option) => (
-          <Button
-            key={option.mode}
-            type="button"
-            size="sm"
-            variant={mode === option.mode ? "default" : "outline"}
-            aria-pressed={mode === option.mode}
-            onClick={() => setMode(option.mode)}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
+      {content.managed && (
+        <div className="mb-8 inline-flex items-center gap-2 rounded-md border bg-card p-1" role="group" aria-label="AI mode">
+          {modeOptions.map((option) => (
+            <Button
+              key={option.mode}
+              type="button"
+              size="sm"
+              variant={mode === option.mode ? "default" : "outline"}
+              aria-pressed={mode === option.mode}
+              onClick={() => setMode(option.mode)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col items-stretch justify-center gap-6 text-left sm:flex-row">
         <PlanCard
           name="Free"
           price={`${currency}0`}
           interval={interval}
-          highlights={planHighlights("free")}
+          highlights={content.freeHighlights}
           cta={
             <>
               <Show when="signed-out">
@@ -127,7 +106,7 @@ export function PricingSection() {
           name="Pro"
           price={`${currency}${paid.pro.price}`}
           interval={interval}
-          highlights={planHighlights("pro", mode)}
+          highlights={paid.pro.highlights}
           highlighted
           cta={
             <>
@@ -151,7 +130,7 @@ export function PricingSection() {
           name="Ultra"
           price={`${currency}${paid.ultra.price}`}
           interval={interval}
-          highlights={planHighlights("ultra", mode)}
+          highlights={paid.ultra.highlights}
           cta={
             <>
               <Show when="signed-out">
@@ -176,7 +155,7 @@ export function PricingSection() {
 
       <Show when="signed-in">
         <div className="mt-6 text-sm text-muted-foreground">
-          Already subscribed? Manage plan changes from <Link href="/dashboard/settings" className="underline underline-offset-4">Settings</Link>.
+          Manage plan changes from <Link href="/dashboard/settings" className="underline underline-offset-4">Settings</Link>.
         </div>
       </Show>
     </section>

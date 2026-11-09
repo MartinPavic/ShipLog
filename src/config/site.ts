@@ -75,6 +75,19 @@ export type SiteConfig = typeof siteConfig;
 export type PaidTier = "pro" | "ultra";
 export type PaidAiMode = "byok" | "managed";
 
+export type PricingPaidCardCopy = {
+  price: number;
+  highlights: [string, string];
+  checkout: { tier: PaidTier; aiMode: PaidAiMode };
+};
+
+export type PricingSectionContent = {
+  summary: string;
+  freeHighlights: string[];
+  byok: { pro: PricingPaidCardCopy; ultra: PricingPaidCardCopy };
+  managed: { pro: PricingPaidCardCopy; ultra: PricingPaidCardCopy } | null;
+};
+
 export function paidPriceLabel(tier: PaidTier, aiMode: PaidAiMode): string {
   const { currency, interval } = siteConfig.pricing;
   const amount = siteConfig.pricing[tier][aiMode];

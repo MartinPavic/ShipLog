@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { billingAccounts } from "@/db/schema";
+import { siteConfig, type PaidAiMode, type PaidTier, type PricingPaidCardCopy, type PricingSectionContent } from "@/config/site";
 import { features, type Features } from "@/env";
 import { ApiError } from "@/lib/api";
 
@@ -211,4 +212,40 @@ export function planHighlights(plan: Plan, aiMode: AiMode = "managed"): string[]
     ...(l.pdfExport ? ["PDF export"] : []),
     ...(l.teams ? ["Teams with organizations"] : []),
   ];
+}
+
+function pricingSummaryCopy(on: Features): string {
+  const extras: string[] = [];
+  if (on.scheduling) extras.push("scheduling");
+  if (on.delivery) extras.push("delivery");
+  extras.push("PDF export");
+  if (on.teams) extras.push("teams");
+  if (!extras.length) return "Free to try. Pro and Ultra unlock full history.";
+  if (extras.length === 1) return `Free to try. Pro and Ultra unlock full history and ${extras[0]}.`;
+  return `Free to try. Pro and Ultra unlock full history, ${extras.slice(0, -1).join(", ")} and ${extras.at(-1)}.`;
+}
+
+function paidCardCopy(tier: PaidTier, aiMode: PaidAiMode): PricingPaidCardCopy {
+  const highlights = planHighlights(tier, aiMode);
+  return {
+    price: siteConfig.pricing[tier][aiMode],
+    highlights: [highlights[0]!, highlights[1]!],
+    checkout: { tier, aiMode },
+  };
+}
+
+function paidCardsForMode(aiMode: PaidAiMode): { pro: PricingPaidCardCopy; ultra: PricingPaidCardCopy } {
+  return {
+    pro: paidCardCopy("pro", aiMode),
+    ultra: paidCardCopy("ultra", aiMode),
+  };
+}
+
+export function pricingSectionContent(on: Features = features()): PricingSectionContent {
+  return {
+    summary: pricingSummaryCopy(on),
+    freeHighlights: planHighlights("free"),
+    byok: paidCardsForMode("byok"),
+    managed: on.managedAi ? paidCardsForMode("managed") : null,
+  };
 }

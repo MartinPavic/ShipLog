@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
-import { pricingCopyForMode } from "@/components/pricing-section";
 import PrivacyPage from "@/app/privacy/page";
 import TermsPage from "@/app/terms/page";
 import { siteConfig } from "@/config/site";
+import { pricingSectionContent } from "@/lib/plans";
 
 vi.mock("@clerk/nextjs", () => ({
   Show: ({ when, children }: { when: string; children: React.ReactNode }) => (when === "signed-out" ? children : null),
@@ -67,8 +67,8 @@ describe("landing page", () => {
     expect(out).not.toContain(`${siteConfig.pricing.currency}29`);
   });
 
-  it("switches paid copy and checkout payloads when the selector changes mode", () => {
-    expect(pricingCopyForMode("byok")).toEqual({
+  it("builds paid copy and checkout payloads on the server for both AI modes", () => {
+    expect(pricingSectionContent().byok).toEqual({
       pro: {
         price: 12,
         highlights: ["5 projects", "50 generations / month with your own AI key"],
@@ -81,7 +81,7 @@ describe("landing page", () => {
       },
     });
 
-    expect(pricingCopyForMode("managed")).toEqual({
+    expect(pricingSectionContent().managed).toEqual({
       pro: {
         price: 19,
         highlights: ["5 projects", "50 managed-AI generations / month"],
@@ -99,6 +99,7 @@ describe("landing page", () => {
     process.env.MANAGED_AI_ENABLED = "false";
     process.env.TEAMS_ENABLED = "false";
     const out = html();
+    expect(out).not.toContain("Managed AI");
     expect(out).not.toContain("managed-AI");
     expect(out).not.toContain("Teams with organizations");
   });
