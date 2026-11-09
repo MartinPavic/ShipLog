@@ -9,12 +9,12 @@ Discord or email, manually or on a schedule.
 
 - **Projects** group the repositories behind one ship log, with a template, tone, audience and custom instructions.
 - **GitHub and GitLab** repositories can be mixed in one project; workspace admins configure GitLab OAuth and members connect their own accounts.
-- **Streaming generation** with OpenAI, Anthropic or Grok. Bring your own key, or use managed AI on Pro.
+- **Streaming generation** with OpenAI, Anthropic or Grok. Bring your own key, or use managed AI on paid plans.
 - **History** per project: search, date range, pinned logs, edit with version history, regenerate in place.
 - **Sharing**: read-only links (optionally password protected, hidden from search engines) and a public changelog.
-- **Exports**: Markdown, HTML, Slack mrkdwn, `.md` download, and PDF through the browser's print dialog (Pro).
-- **Delivery and scheduling** (Pro): Slack, Discord and email channels; a weekly schedule per project.
-- **Teams** (Pro): Clerk Organizations with admin and member roles. Billing is flat per organization.
+- **Exports**: Markdown, HTML, Slack mrkdwn, `.md` download, and PDF through the browser's print dialog (paid plans).
+- **Delivery and scheduling** (paid plans): Slack, Discord and email channels; a weekly schedule per project.
+- **Teams** (paid plans): Clerk Organizations with admin and member roles. Billing is flat per organization.
 - **Billing**: Stripe subscriptions with a customer portal. Switch it off entirely with `BILLING_ENABLED=false`.
 
 | | Free | Pro (BYOK / Managed) | Ultra (BYOK / Managed) |

@@ -125,6 +125,25 @@ describe("validateEnv", () => {
     expect(validateEnv({ ...base, BILLING_ENABLED: "false", SCHEDULING_ENABLED: "false" }, true).errors).toEqual([]);
   });
 
+  it("does not accept legacy STRIPE_PRICE_ID as a billing substitute", () => {
+    const env = complete() as Record<string, string | undefined>;
+    delete env.STRIPE_PRICE_PRO_BYOK_ID;
+    delete env.STRIPE_PRICE_PRO_MANAGED_ID;
+    delete env.STRIPE_PRICE_ULTRA_BYOK_ID;
+    delete env.STRIPE_PRICE_ULTRA_MANAGED_ID;
+    env.STRIPE_PRICE_ID = "price_legacy";
+
+    const { errors } = validateEnv(env, true);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("STRIPE_PRICE_PRO_BYOK_ID"),
+        expect.stringContaining("STRIPE_PRICE_PRO_MANAGED_ID"),
+        expect.stringContaining("STRIPE_PRICE_ULTRA_BYOK_ID"),
+        expect.stringContaining("STRIPE_PRICE_ULTRA_MANAGED_ID"),
+      ])
+    );
+  });
+
   it("rejects a short cron secret", () => {
     expect(validateEnv({ ...complete(), CRON_SECRET: "short" }, true).errors).toEqual([
       expect.stringContaining("at least 16 characters"),

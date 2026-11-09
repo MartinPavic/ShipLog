@@ -83,8 +83,13 @@ describe("workspace plan limits", () => {
     expect(freeOrg).toMatchObject({ maxProjects: 0, byokGenerationsPerMonth: 0, managedGenerationsPerMonth: 0 });
     expect(freeOrg.visibleLogs).toBe(PLAN_LIMITS.free.visibleLogs);
     expect(freeOrg.teams || freeOrg.delivery || freeOrg.scheduling).toBe(false);
-    expect(limitsFor("pro", "org_abc")).toEqual(PLAN_LIMITS.pro);
-    expect(limitsFor("pro", "user_abc")).toEqual(PLAN_LIMITS.pro);
+    expect(limitsFor("pro", "org_abc", "managed")).toEqual(PLAN_LIMITS.pro);
+    expect(limitsFor("pro", "org_abc", "byok")).toMatchObject({
+      maxProjects: PLAN_LIMITS.pro.maxProjects,
+      managedGenerationsPerMonth: 0,
+      byokGenerationsPerMonth: 50,
+    });
+    expect(limitsFor("pro", "user_abc", "managed")).toEqual(PLAN_LIMITS.pro);
   });
 });
 
@@ -134,7 +139,7 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
     const { saveGithubConnection } = await import("./github");
     const db = getDb();
 
-    await db.insert(billingAccounts).values({ ownerId: orgId, plan: "pro", status: "active" });
+    await db.insert(billingAccounts).values({ ownerId: orgId, plan: "pro", aiMode: "byok", status: "active" });
     await db.insert(aiCredentials).values([
       { ownerId: orgId, provider: "openai", encryptedKey: encrypt("sk-org-key"), last4: "-key" },
       { ownerId: freeOrgId, provider: "openai", encryptedKey: encrypt("sk-free-org"), last4: "-org" },
@@ -251,7 +256,10 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
       await denied(takeOver.POST(req("POST"), ctx(ids.team)));
 
       await denied(
-        (await import("@/app/api/stripe/checkout/route")).POST(req("POST", { tier: "pro", aiMode: "managed" }))
+        (await import("@/app/api/stripe/checkout/route")).POST(req("POST", { tier: "pro", aiMode: "byok" }))
+      );
+      await denied(
+        (await import("@/app/api/stripe/checkout/route")).POST(req("POST", { tier: "ultra", aiMode: "managed" }))
       );
       await denied((await import("@/app/api/stripe/portal/route")).POST());
 
@@ -323,9 +331,9 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
     });
 
     it("counts usage flat per organization, independent of who generates and of personal workspaces", async () => {
-      const { PLAN_LIMITS } = await import("./plans");
+      const { limitsFor } = await import("./plans");
       const { reserveGeneration, getUsage } = await import("./usage");
-      const tight = { ...PLAN_LIMITS.pro, managedGenerationsPerMonth: 2 };
+      const tight = { ...limitsFor("pro", orgId, "managed"), managedGenerationsPerMonth: 2 };
 
       await reserveGeneration(orgId, "managed", tight); // admin
       await reserveGeneration(orgId, "managed", tight); // member
@@ -380,7 +388,7 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
     it("work normally after upgrading", async () => {
       const { getDb } = await import("@/db");
       const { billingAccounts } = await import("@/db/schema");
-      await getDb().insert(billingAccounts).values({ ownerId: freeOrgId, plan: "pro", status: "active" });
+      await getDb().insert(billingAccounts).values({ ownerId: freeOrgId, plan: "pro", aiMode: "byok", status: "active" });
       current = freeAdmin;
       const { POST } = await import("@/app/api/projects/route");
       expect((await POST(req("POST", { name: "After upgrade" }))).status).toBe(201);
@@ -477,7 +485,7 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
       const solo = mk(`test_u_${rand()}`, null, null);
       allOwners.push(solo.userId);
       const db = getDb();
-      await db.insert(billingAccounts).values({ ownerId: solo.ownerId, plan: "pro", status: "active" });
+      await db.insert(billingAccounts).values({ ownerId: solo.ownerId, plan: "pro", aiMode: "byok", status: "active" });
       await db.insert(aiCredentials).values({ ownerId: solo.ownerId, provider: "openai", encryptedKey: encrypt("sk"), last4: "x" });
       await saveGithubConnection(solo.userId, { login: "solo", token: "gh_solo", scopes: "repo" });
       const project = await newProject(solo, "Solo");

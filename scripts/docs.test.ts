@@ -56,6 +56,7 @@ describe("documentation", () => {
     const configuration = read("docs/configuration.md");
     const services = read("docs/services.md");
     const setup = read("scripts/setup.ts");
+    const envExample = read(".env.example");
 
     for (const name of [
       "STRIPE_PRICE_PRO_BYOK_ID",
@@ -66,6 +67,7 @@ describe("documentation", () => {
       expect(configuration).toContain(name);
       expect(services).toContain(name);
       expect(setup).toContain(name);
+      expect(envExample).toContain(name);
     }
 
     expect(configuration).not.toContain("STRIPE_PRICE_ID");

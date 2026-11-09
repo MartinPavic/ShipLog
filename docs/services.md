@@ -77,7 +77,7 @@ Skip this if you set `BILLING_ENABLED=false`.
    stripe listen --forward-to localhost:3000/api/webhooks/stripe
    ```
 
-4. Enable the **customer portal** in the Stripe dashboard so "Manage billing" works, and allow switching across all four prices.
+5. Enable the **customer portal** in the Stripe dashboard so "Manage billing" works, and allow switching across all four prices.
 5. Try the lifecycle with `stripe trigger checkout.session.completed`, `customer.subscription.deleted` and
    `invoice.payment_failed`. Events are processed once per id, so replays are safe.
 
@@ -99,7 +99,7 @@ Variables: `RESEND_API_KEY`, `RESEND_FROM`.
 
 ## OpenAI for managed AI (optional)
 
-On managed paid plans, workspaces without their own key use the server's OpenAI key (50 generations on Pro Managed AI,
+On paid managed plans, workspaces without their own key use the server's OpenAI key (50 generations on Pro Managed AI,
 200 on Ultra Managed AI by default).
 Set `MANAGED_AI_ENABLED=false` to never use it. Free workspaces always bring their own key.
 

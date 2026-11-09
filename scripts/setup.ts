@@ -153,7 +153,7 @@ async function interactive() {
     ]);
 
     console.log("\nBilling");
-    const billing = await confirm("  Charge for a Pro plan with Stripe? (No removes the paywall: everything is unlimited.)", get("BILLING_ENABLED") !== "false");
+    const billing = await confirm("  Charge for paid plans with Stripe? (No removes the paywall: everything is unlimited.)", get("BILLING_ENABLED") !== "false");
     save("BILLING_ENABLED", String(billing));
     if (billing) {
       await group("Stripe", "https://dashboard.stripe.com, test mode is fine to start.", [
@@ -170,7 +170,7 @@ async function interactive() {
     const demo = await confirm("  Use demo mode (placeholder output, no AI key needed)?", get("AI_PROVIDER") === "mock");
     save("AI_PROVIDER", demo ? "mock" : "live");
     if (!demo && billing) {
-      await group("Managed AI (optional)", "An OpenAI key lets Pro workspaces generate without their own key.", [["OPENAI_API_KEY", "OpenAI API key", true]]);
+      await group("Managed AI (optional)", "An OpenAI key lets paid Managed AI workspaces generate without their own key.", [["OPENAI_API_KEY", "OpenAI API key", true]]);
     }
 
     await group("Email (optional)", "https://resend.com. Needed for email delivery and failure notices.", [

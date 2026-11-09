@@ -3,8 +3,7 @@
 ## What you need
 
 - Node.js 22.12 or newer and npm.
-- Free accounts at [Clerk](https://clerk.com) (sign-in), [Neon](https://neon.com) (Postgres) and GitHub (an OAuth app).
-	GitLab is optional and configured by a workspace admin in Settings.
+- Free accounts at [Clerk](https://clerk.com) (sign-in), [Neon](https://neon.com) (Postgres) and GitHub (an OAuth app). GitLab is optional and configured by a workspace admin in Settings.
 - Optional: [Stripe](https://stripe.com) for paid plans, [Resend](https://resend.com) for email, an OpenAI key for managed AI.
 
 [Service setup](services.md) walks through each account. None of the optional ones is needed to start.
@@ -23,7 +22,7 @@ npm run dev
 2. generates `ENCRYPTION_KEY` and `CRON_SECRET`,
 3. asks for each service's credentials; press Enter to skip any step,
 4. asks whether you want billing and whether to use demo AI,
-	billing setup now asks for four Stripe monthly price IDs (Pro/Ultra, BYOK/Managed AI),
+   billing setup now asks for four Stripe monthly price IDs (Pro/Ultra, BYOK/Managed AI),
 5. checks the database connection and applies the migrations,
 6. prints what is still left to do by hand.
 
@@ -40,7 +39,7 @@ production rules and `--db` to test the database connection). It exits with code
 
 1. Open <http://localhost:3000> and sign up.
 2. In **Settings**, connect GitHub or have an admin configure GitLab and connect your GitLab account, then add an AI key
-	(or enable demo mode, below).
+   (or enable demo mode, below).
 3. Create a project, pick repositories and a template, and click **Generate**.
 
 ## Look around without GitHub or an AI key

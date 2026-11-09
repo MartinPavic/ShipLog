@@ -27,7 +27,7 @@ const TUESDAY = new Date("2026-10-13T10:30:00Z");
 const SLOT = "2026-10-14";
 const schedule = { enabled: true, dayOfWeek: 3, hour: 9, timezone: "UTC", periodDays: 7, autoDeliver: true };
 
-type Fx = { ownerId: string; userId: string; projectId: string };
+type Fx = { ownerId: string; userId: string; projectId: string; aiMode: "byok" | "managed" };
 let calls: { url: string; body: unknown }[];
 let activity: unknown[];
 let ai: () => Response;
@@ -71,7 +71,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
   const fixtures: Fx[] = [];
 
   async function setup(opts: {
-    pro?: boolean;
+    plan?: "free" | "pro" | "ultra";
+    aiMode?: "byok" | "managed";
     github?: boolean;
     gitlab?: boolean;
     provider?: "github" | "gitlab";
@@ -79,7 +80,15 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     channel?: boolean;
     schedule?: object;
   } = {}): Promise<Fx> {
-    const { pro = true, github = true, gitlab = false, provider = "github", ai: withAi = true, channel = true } = opts;
+    const {
+      plan = "pro",
+      aiMode = "managed",
+      github = true,
+      gitlab = false,
+      provider = "github",
+      ai: withAi = true,
+      channel = true,
+    } = opts;
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts, deliveryChannels } = await import("@/db/schema");
     const { encrypt } = await import("./crypto");
@@ -89,9 +98,9 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const { createProjectSchema } = await import("./validation");
     const db = getDb();
 
-    const fx = { ownerId: `test_o_${rand()}`, userId: `test_u_${rand()}`, projectId: "" };
+    const fx = { ownerId: `test_o_${rand()}`, userId: `test_u_${rand()}`, projectId: "", aiMode };
     const owner = { userId: fx.userId, orgId: null, ownerId: fx.ownerId, orgRole: null };
-    if (pro) await db.insert(billingAccounts).values({ ownerId: fx.ownerId, plan: "pro", status: "active" });
+    if (plan !== "free") await db.insert(billingAccounts).values({ ownerId: fx.ownerId, plan, aiMode, status: "active" });
     if (github) await saveGithubConnection(fx.userId, { login: "dev", token: "gh_token", scopes: "repo" });
     if (gitlab) {
       await configureGitLabInstance(fx.ownerId, {
@@ -145,7 +154,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     return row;
   }
   async function usage(fx: Fx) {
-    return (await (await import("./usage")).getUsage(fx.ownerId)).byok;
+    const usage = await (await import("./usage")).getUsage(fx.ownerId);
+    return usage[fx.aiMode];
   }
   const emails = () => calls.filter((c) => c.url.includes("api.resend.com"));
 
@@ -247,7 +257,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
   });
 
   it("skips downgraded accounts without generating", async () => {
-    const fx = await setup({ pro: false });
+    const fx = await setup({ plan: "free" });
     expect(await run(fx)).toMatchObject({ generated: 0, skipped: 1 });
     expect(await runRow(fx)).toMatchObject({ status: "skipped", error: "Scheduled logs require the Pro plan." });
     expect(await logsOf(fx)).toHaveLength(0);
@@ -269,7 +279,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
   });
 
   it("skips and notifies when no AI key is available", async () => {
-    const noKey = await setup({ ai: false });
+    const noKey = await setup({ ai: false, aiMode: "byok" });
     expect(await run(noKey)).toMatchObject({ skipped: 1 });
     expect((await runRow(noKey)).error).toContain("API key");
     expect(emails()).toHaveLength(1);
@@ -279,7 +289,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const saved = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "sk-managed-test";
     try {
-      const fx = await setup({ ai: false });
+      const fx = await setup({ ai: false, plan: "ultra", aiMode: "managed" });
       const { getDb } = await import("@/db");
       const { usageCounters } = await import("@/db/schema");
       const { currentPeriod } = await import("./usage");
