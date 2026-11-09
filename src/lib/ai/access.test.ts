@@ -20,6 +20,7 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
   };
   let savedKey: string | undefined;
   let savedProvider: string | undefined;
+  let savedBillingEnabled: string | undefined;
 
   async function setCredential(ownerId: string, provider: "openai" | "anthropic" | "grok", key: string, model: string | null = null) {
     const { getDb } = await import("@/db");
@@ -31,6 +32,7 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
   beforeAll(async () => {
     savedKey = process.env.OPENAI_API_KEY;
     savedProvider = process.env.AI_PROVIDER;
+    savedBillingEnabled = process.env.BILLING_ENABLED;
     const { getDb } = await import("@/db");
     const { billingAccounts } = await import("@/db/schema");
     await getDb().insert(billingAccounts).values([
@@ -54,6 +56,8 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
     else process.env.OPENAI_API_KEY = savedKey;
     if (savedProvider === undefined) delete process.env.AI_PROVIDER;
     else process.env.AI_PROVIDER = savedProvider;
+    if (savedBillingEnabled === undefined) delete process.env.BILLING_ENABLED;
+    else process.env.BILLING_ENABLED = savedBillingEnabled;
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts } = await import("@/db/schema");
@@ -150,5 +154,25 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
     const row = await getAiCredential(ids.freeKey);
     expect(row?.encryptedKey).not.toContain("sk-ant-free-key");
     expect(row?.last4).toBe("-key");
+  });
+
+  it("keeps billing-off behavior: prefer workspace BYOK key, otherwise use server-managed key", async () => {
+    process.env.BILLING_ENABLED = "false";
+    process.env.OPENAI_API_KEY = "sk-managed";
+    delete process.env.AI_PROVIDER;
+
+    const byokFirst = await resolve(ids.freeKey);
+    expect(byokFirst).toMatchObject({
+      kind: "byok",
+      provider: "anthropic",
+      key: "sk-ant-free-key",
+    });
+
+    const managedFallback = await resolve(ids.freeNone);
+    expect(managedFallback).toMatchObject({
+      kind: "managed",
+      provider: "openai",
+      key: "sk-managed",
+    });
   });
 });

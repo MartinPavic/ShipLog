@@ -135,8 +135,12 @@ describe.skipIf(!process.env.DATABASE_URL)("getDashboardData (database)", () => 
     expect((await data()).onboarding.next?.id).toBe("ai");
 
     // Pro BYOK still needs a workspace key even if the server has a managed key.
+    process.env.OPENAI_API_KEY = "sk-managed";
     await getDb().insert(billingAccounts).values({ ownerId: owner.ownerId, plan: "pro", aiMode: "byok", status: "active" });
-    expect((await data()).onboarding.next?.id).toBe("ai");
+    const byokMissingKey = await data();
+    expect(byokMissingKey.setup.canGenerate).toBe(false);
+    expect(byokMissingKey.onboarding.steps[1].done).toBe(false);
+    expect(byokMissingKey.onboarding.next?.id).toBe("ai");
 
     // Switching the paid mode to managed makes the server key sufficient.
     const { eq } = await import("drizzle-orm");
@@ -148,12 +152,20 @@ describe.skipIf(!process.env.DATABASE_URL)("getDashboardData (database)", () => 
     const managed = await data();
     expect(managed.onboarding.steps[1].done).toBe(true);
     expect(managed.usage).toEqual({ kind: "managed", used: 0, limit: 50 });
-    delete process.env.OPENAI_API_KEY;
 
     await getDb().insert(aiCredentials).values({ ownerId: owner.ownerId, provider: "openai", encryptedKey: encrypt("sk"), last4: "x" });
+    delete process.env.OPENAI_API_KEY;
+    const managedMissingServerKey = await data();
+    expect(managedMissingServerKey.setup.canGenerate).toBe(false);
+    expect(managedMissingServerKey.onboarding.steps[1].done).toBe(false);
+
+    await getDb()
+      .update(billingAccounts)
+      .set({ aiMode: "byok" })
+      .where(eq(billingAccounts.ownerId, owner.ownerId));
     const withKey = await data();
     expect(withKey.onboarding.next?.id).toBe("project");
-    expect(withKey.usage).toEqual({ kind: "managed", used: 0, limit: 50 });
+    expect(withKey.usage).toEqual({ kind: "byok", used: 0, limit: 50 });
 
     const project = await createProject(owner, createProjectSchema.parse({ name: "First" }), 5);
     const withProject = await data();

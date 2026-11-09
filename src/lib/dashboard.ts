@@ -91,7 +91,7 @@ export async function getDashboardData(owner: { ownerId: string; userId: string 
     onboarding: buildOnboarding({
       github: status.github !== null,
       gitlab: status.gitlab.connection !== null,
-      ai: status.ai !== null || status.managedAi || status.demoAi,
+      ai: status.aiReady,
       firstProjectId: projectRows[0]?.id ?? null,
       hasLog: totals.n > 0,
     }),

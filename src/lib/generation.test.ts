@@ -363,29 +363,34 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     const { eq } = await import("drizzle-orm");
     const { encrypt } = await import("./crypto");
     const { startStreamingGeneration } = await import("./generation");
+    const previousManagedKey = process.env.OPENAI_API_KEY;
 
-    process.env.OPENAI_API_KEY = "sk-managed";
-    await getDb()
-      .insert(billingAccounts)
-      .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "byok", status: "active" })
-      .onConflictDoUpdate({
-        target: billingAccounts.ownerId,
-        set: { plan: "pro", aiMode: "byok", status: "active" },
+    try {
+      process.env.OPENAI_API_KEY = "sk-managed";
+      await getDb()
+        .insert(billingAccounts)
+        .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "byok", status: "active" })
+        .onConflictDoUpdate({
+          target: billingAccounts.ownerId,
+          set: { plan: "pro", aiMode: "byok", status: "active" },
+        });
+      await getDb().delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
+
+      await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
+        code: "NO_AI_KEY",
+        status: 400,
       });
-    await getDb().delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
-
-    await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
-      code: "NO_AI_KEY",
-      status: 400,
-    });
-
-    await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
-    await getDb().insert(aiCredentials).values({
-      ownerId: owner.ownerId,
-      provider: "openai",
-      encryptedKey: encrypt("sk-test-key"),
-      last4: "-key",
-    });
+    } finally {
+      if (previousManagedKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousManagedKey;
+      await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
+      await getDb().insert(aiCredentials).values({
+        ownerId: owner.ownerId,
+        provider: "openai",
+        encryptedKey: encrypt("sk-test-key"),
+        last4: "-key",
+      });
+    }
   });
 
   it("fails clearly when Pro Managed is selected but the server key is unavailable", async () => {
@@ -394,21 +399,26 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     const { billingAccounts } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
     const { startStreamingGeneration } = await import("./generation");
+    const previousManagedKey = process.env.OPENAI_API_KEY;
 
-    delete process.env.OPENAI_API_KEY;
-    await getDb()
-      .insert(billingAccounts)
-      .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "managed", status: "active" })
-      .onConflictDoUpdate({
-        target: billingAccounts.ownerId,
-        set: { plan: "pro", aiMode: "managed", status: "active" },
+    try {
+      delete process.env.OPENAI_API_KEY;
+      await getDb()
+        .insert(billingAccounts)
+        .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "managed", status: "active" })
+        .onConflictDoUpdate({
+          target: billingAccounts.ownerId,
+          set: { plan: "pro", aiMode: "managed", status: "active" },
+        });
+
+      await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
+        code: "MANAGED_AI_UNAVAILABLE",
+        status: 503,
       });
-
-    await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
-      code: "MANAGED_AI_UNAVAILABLE",
-      status: 503,
-    });
-
-    await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
+    } finally {
+      if (previousManagedKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousManagedKey;
+      await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
+    }
   });
 });

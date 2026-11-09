@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 // Next's loadEnvConfig skips .env.local when NODE_ENV=test.
 try {
@@ -12,12 +12,28 @@ describe.skipIf(!process.env.DATABASE_URL)("reserveGeneration (database)", () =>
   const proByokOwnerId = `test_${crypto.randomUUID()}`;
   const proManagedOwnerId = `test_${crypto.randomUUID()}`;
   const ultraManagedOwnerId = `test_${crypto.randomUUID()}`;
+  const ultraByokOwnerId = `test_${crypto.randomUUID()}`;
+  const workspaceOwnerId = `test_${crypto.randomUUID()}`;
+  const otherWorkspaceOwnerId = `test_${crypto.randomUUID()}`;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   afterAll(async () => {
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts, usageCounters, usageReservations } = await import("@/db/schema");
-    const owners = [ownerId, meterOwnerId, proByokOwnerId, proManagedOwnerId, ultraManagedOwnerId];
+    const owners = [
+      ownerId,
+      meterOwnerId,
+      proByokOwnerId,
+      proManagedOwnerId,
+      ultraManagedOwnerId,
+      ultraByokOwnerId,
+      workspaceOwnerId,
+      otherWorkspaceOwnerId,
+    ];
     await getDb().delete(usageReservations).where(inArray(usageReservations.ownerId, owners));
     await getDb().delete(usageCounters).where(inArray(usageCounters.ownerId, owners));
     await getDb().delete(aiCredentials).where(inArray(aiCredentials.ownerId, owners));
@@ -33,6 +49,7 @@ describe.skipIf(!process.env.DATABASE_URL)("reserveGeneration (database)", () =>
     );
     const granted = results.filter((r) => r.status === "fulfilled");
     expect(granted).toHaveLength(5);
+    await expect(reserveGeneration(ownerId, "byok", PLAN_LIMITS.free)).rejects.toMatchObject({ code: "LIMIT_REACHED" });
     expect((await getUsage(ownerId)).byok).toBe(5);
 
     await releaseGeneration(granted[0].value);
@@ -80,6 +97,7 @@ describe.skipIf(!process.env.DATABASE_URL)("reserveGeneration (database)", () =>
     const proByok = limitsFor("pro", proByokOwnerId, "byok");
     const proManaged = limitsFor("pro", proManagedOwnerId, "managed");
     const ultraManaged = limitsFor("ultra", ultraManagedOwnerId, "managed");
+    const ultraByok = limitsFor("ultra", ultraByokOwnerId, "byok");
 
     const proByokReservations = await Promise.all(
       Array.from({ length: 50 }, () => reserveGeneration(proByokOwnerId, "byok", proByok))
@@ -93,38 +111,53 @@ describe.skipIf(!process.env.DATABASE_URL)("reserveGeneration (database)", () =>
     );
     expect(proManagedReservations).toHaveLength(50);
     await expect(reserveGeneration(proManagedOwnerId, "managed", proManaged)).rejects.toMatchObject({ code: "LIMIT_REACHED" });
+    expect((await getUsage(proManagedOwnerId)).byok).toBe(0);
 
     const ultraManagedReservations = await Promise.all(
       Array.from({ length: 200 }, () => reserveGeneration(ultraManagedOwnerId, "managed", ultraManaged))
     );
     expect(ultraManagedReservations).toHaveLength(200);
     await expect(reserveGeneration(ultraManagedOwnerId, "managed", ultraManaged)).rejects.toMatchObject({ code: "LIMIT_REACHED" });
+
+    const ultraByokReservations = await Promise.all(
+      Array.from({ length: 220 }, () => reserveGeneration(ultraByokOwnerId, "byok", ultraByok))
+    );
+    expect(ultraByokReservations).toHaveLength(220);
+    expect((await getUsage(ultraByokOwnerId)).byok).toBe(220);
+    expect((await getUsage(ultraByokOwnerId)).managed).toBe(0);
   });
 
-  it("is workspace-shared and month-scoped (UTC)", async () => {
+  it("is workspace-scoped and resets at the UTC month boundary", async () => {
+    vi.useFakeTimers();
     const { getDb } = await import("@/db");
     const { usageCounters } = await import("@/db/schema");
-    const { and, eq } = await import("drizzle-orm");
     const { currentPeriod, getUsage } = await import("./usage");
+    const { eq } = await import("drizzle-orm");
 
-    const current = currentPeriod(new Date("2026-11-09T12:00:00Z"));
-    const previous = currentPeriod(new Date("2026-10-31T23:59:59Z"));
+    vi.setSystemTime(new Date("2026-11-30T23:59:59.000Z"));
+    const november = currentPeriod();
+    const october = currentPeriod(new Date("2026-10-31T23:59:59.000Z"));
 
-    await getDb().delete(usageCounters).where(eq(usageCounters.ownerId, ownerId));
+    await getDb().delete(usageCounters).where(eq(usageCounters.ownerId, workspaceOwnerId));
+    await getDb().delete(usageCounters).where(eq(usageCounters.ownerId, otherWorkspaceOwnerId));
 
     await getDb().insert(usageCounters).values([
-      { ownerId, period: previous, kind: "byok", count: 9 },
-      { ownerId, period: current, kind: "byok", count: 3 },
-      { ownerId, period: current, kind: "managed", count: 2 },
+      { ownerId: workspaceOwnerId, period: october, kind: "byok", count: 9 },
+      { ownerId: workspaceOwnerId, period: november, kind: "byok", count: 2 },
+      { ownerId: otherWorkspaceOwnerId, period: november, kind: "byok", count: 1 },
     ]);
 
-    expect(await getUsage(ownerId)).toEqual({ byok: 3, managed: 2 });
-    expect(
-      await getDb()
-        .select()
-        .from(usageCounters)
-        .where(and(eq(usageCounters.ownerId, ownerId), eq(usageCounters.period, previous), eq(usageCounters.kind, "byok")))
-    ).toHaveLength(1);
+    expect(await getUsage(workspaceOwnerId)).toEqual({ byok: 2, managed: 0 });
+    expect(await getUsage(otherWorkspaceOwnerId)).toEqual({ byok: 1, managed: 0 });
+
+    vi.setSystemTime(new Date("2026-12-01T00:00:01.000Z"));
+    const december = currentPeriod();
+    expect(await getUsage(workspaceOwnerId)).toEqual({ byok: 0, managed: 0 });
+    expect(await getUsage(otherWorkspaceOwnerId)).toEqual({ byok: 0, managed: 0 });
+
+    await getDb().insert(usageCounters).values({ ownerId: workspaceOwnerId, period: december, kind: "byok", count: 1 });
+    expect(await getUsage(workspaceOwnerId)).toEqual({ byok: 1, managed: 0 });
+    expect(await getUsage(otherWorkspaceOwnerId)).toEqual({ byok: 0, managed: 0 });
   });
 
   it("reports usage for the persisted aiMode, not credential presence", async () => {

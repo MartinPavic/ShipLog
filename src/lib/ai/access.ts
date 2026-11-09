@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 import { aiCredentials } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { DEFAULT_MODELS, MANAGED_PROVIDER } from "@/lib/ai/models";
-import { isMockAi, managedAiKey } from "@/env";
+import { features, isMockAi, managedAiKey } from "@/env";
 import { decrypt } from "@/lib/crypto";
 import { getPlanLimits, type AiMode, type Plan, type PlanLimits } from "@/lib/plans";
 import type { AiProvider } from "@/lib/validation";
@@ -37,15 +37,39 @@ export function resolveUsageKind(plan: Plan, aiMode: AiMode | null, limits: Plan
 // The subscription mode is authoritative: BYOK requires a workspace key, Managed requires the server key.
 export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
   const { plan, aiMode, limits } = await getPlanLimits(ownerId);
+  const billingEnabled = features().billing;
   const kind = resolveUsageKind(plan, aiMode, limits);
+  const credential = await getAiCredential(ownerId);
+  const managedKey = managedAiKey();
 
   // Demo mode: nothing leaves the server and no key is needed, but usage is still counted.
   if (isMockAi()) {
     return { kind, provider: "mock", key: "mock", model: "mock", limits };
   }
 
+  // Billing-off mode is permissive: keep existing workspace BYOK if present, otherwise use server-managed AI.
+  if (!billingEnabled) {
+    if (credential) {
+      return {
+        kind: "byok",
+        provider: credential.provider,
+        key: decrypt(credential.encryptedKey),
+        model: credential.model ?? DEFAULT_MODELS[credential.provider],
+        limits,
+      };
+    }
+    if (managedKey) {
+      return {
+        kind: "managed",
+        provider: MANAGED_PROVIDER,
+        key: managedKey,
+        model: DEFAULT_MODELS[MANAGED_PROVIDER],
+        limits,
+      };
+    }
+  }
+
   if (kind === "byok") {
-    const credential = await getAiCredential(ownerId);
     if (!credential) throw new ApiError(400, "Add your AI API key in Settings first.", "NO_AI_KEY");
     return {
       kind: "byok",
@@ -56,7 +80,6 @@ export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
     };
   }
 
-  const managedKey = managedAiKey();
   if (!managedKey) {
     throw new ApiError(
       503,
