@@ -30,6 +30,8 @@ export default async function DashboardPage({
 
   const { plan, stats, usage, projects, recentLogs, onboarding, setup } = data;
   const maxProjects = limitsFor(plan, owner.ownerId).maxProjects;
+  const isPaid = plan !== "free";
+  const planLabel = plan === "ultra" ? "Ultra" : plan === "pro" ? "Pro" : "Free";
   const billing = features().billing;
   const lastId = cookieStore.get(PROJECT_COOKIE)?.value;
   const initialProject = projects.find((p) => p.id === lastId) ?? projects[0];
@@ -50,9 +52,9 @@ export default async function DashboardPage({
 
       {success && (
         <p role="status" className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm">
-          {plan === "pro"
-            ? "You're on Pro. Thanks for subscribing!"
-            : "Payment received. Your Pro plan activates in a moment; refresh this page in a few seconds."}
+          {isPaid
+            ? `You're on ${planLabel}. Thanks for subscribing!`
+            : "Payment received. Your paid plan activates in a moment; refresh this page in a few seconds."}
         </p>
       )}
       {canceled && !success && (
@@ -119,8 +121,8 @@ export default async function DashboardPage({
         <div className="flex flex-wrap items-center gap-4">
           {billing && (
             <div className="flex flex-wrap items-center gap-3">
-              <Badge variant={plan === "pro" ? "default" : "secondary"}>{plan === "pro" ? "Pro" : "Free"}</Badge>
-              {isAdmin(owner) && (plan === "pro" ? <ManageBillingButton /> : <UpgradeButton />)}
+              <Badge variant={isPaid ? "default" : "secondary"}>{planLabel}</Badge>
+              {isAdmin(owner) && (isPaid ? <ManageBillingButton /> : <UpgradeButton />)}
             </div>
           )}
           <UsageMeter used={usage.used} limit={usage.limit} />

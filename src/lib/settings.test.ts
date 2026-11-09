@@ -126,5 +126,10 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     expect(status.plan).toBe("pro");
     expect(status.aiMode).toBe("managed");
     expect(status.usage).toEqual({ used: 0, limit: null });
+
+    delete process.env.OPENAI_API_KEY;
+    const noManagedKey = await getSetupStatus({ ownerId: ownerIds.free, userId: userIds.free });
+    expect(noManagedKey.aiMode).toBe("byok");
+    expect(noManagedKey.usage).toEqual({ used: 2, limit: null });
   });
 });

@@ -38,24 +38,28 @@ function BillingCard({
         <CardDescription>
           {isPaid
             ? "Manage your subscription, payment method and invoices."
-            : "Upgrade for more projects, full history and managed AI."}
+            : "Upgrade for more projects and full history. Bring your own AI key in Settings to generate reports."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="mb-4 space-y-1 text-sm text-muted-foreground">
-          <p>AI mode: {modeLabel}</p>
+          {isPaid && <p>AI mode: {modeLabel}</p>}
           <p>Allowance: {allowanceLabel}</p>
         </div>
         <div className="mb-4 space-y-1 text-sm text-muted-foreground">
-          {aiMode === "byok" ? (
+          {!isPaid || aiMode === "byok" ? (
             <p>BYOK mode requires a workspace AI key.</p>
           ) : (
             <p>Managed AI mode uses the deployment key and ignores any saved workspace key.</p>
           )}
-          <p>Switch AI mode through subscription management.</p>
+          {isPaid && <p>Switch AI mode through subscription management.</p>}
         </div>
         {aiMode === "managed" && !demoAi && !aiReady && (
-          <p className="mb-4 text-sm text-danger">Managed AI is unavailable on this deployment. Add the managed key or switch this workspace to BYOK mode.</p>
+          <p className="mb-4 text-sm text-danger">
+            {canManage
+              ? "Managed AI is unavailable on this deployment. Configure the server AI key or switch this workspace to BYOK mode."
+              : "Managed AI is unavailable on this deployment. Contact your organization admin."}
+          </p>
         )}
         {!canManage ? (
           <p className="text-sm text-muted-foreground">Only organization admins can manage billing.</p>

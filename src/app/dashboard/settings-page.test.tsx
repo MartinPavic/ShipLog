@@ -74,7 +74,9 @@ describe("settings billing card", () => {
     const free = await render();
     expect(free).toContain("Billing");
     expect(free).toContain(">Free<");
-    expect(free).toContain("AI mode: BYOK");
+    expect(free).toContain("Bring your own AI key in Settings to generate reports.");
+    expect(free).not.toContain("AI mode: BYOK");
+    expect(free).not.toContain("Switch AI mode through subscription management.");
     expect(free).toContain("Allowance: 2 / 5 generations this month");
 
     state.status = { ...state.status, plan: "pro", aiMode: "managed", usage: { used: 8, limit: 50 } };
@@ -93,7 +95,24 @@ describe("settings billing card", () => {
   it("warns when a managed subscription has no configured managed AI key", async () => {
     state.status = { ...state.status, plan: "pro", aiMode: "managed", usage: { used: 1, limit: 50 }, aiReady: false, managedAi: false };
     const html = await render();
-    expect(html).toContain("Managed AI is unavailable on this deployment");
+    expect(html).toContain("Managed AI is unavailable on this deployment. Configure the server AI key or switch this workspace to BYOK mode.");
+  });
+
+  it("shows paid admins a manage billing control and no upgrade button", async () => {
+    state.status = { ...state.status, plan: "pro", aiMode: "managed", usage: { used: 9, limit: 50 } };
+    const html = await render();
+    expect(html).toContain("Manage billing button");
+    expect(html).not.toContain("Upgrade button");
+  });
+
+  it("hides billing controls for non-admins and shows non-actionable managed warning guidance", async () => {
+    state.admin = false;
+    state.status = { ...state.status, plan: "pro", aiMode: "managed", usage: { used: 1, limit: 50 }, aiReady: false, managedAi: false };
+    const html = await render();
+    expect(html).toContain("Only organization admins can manage billing.");
+    expect(html).not.toContain("Manage billing button");
+    expect(html).not.toContain("Upgrade button");
+    expect(html).toContain("Managed AI is unavailable on this deployment. Contact your organization admin.");
   });
 
   it("hides billing UI when billing is disabled", async () => {

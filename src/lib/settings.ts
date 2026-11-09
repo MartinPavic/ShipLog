@@ -7,27 +7,29 @@ import { getUsage, getUsageMeter } from "@/lib/usage";
 
 // Never includes secrets; safe to pass to client components.
 export async function getSetupStatus(owner: { ownerId: string; userId: string }) {
-  const [github, gitlab, gitlabInstance, credential, { plan, aiMode, limits }, usageMeter, usageCounters] = await Promise.all([
+  const billingEnabled = features().billing;
+  const [github, gitlab, gitlabInstance, credential, { plan, aiMode, limits }] = await Promise.all([
     getGithubConnection(owner.userId),
     getGitLabConnectionStatus(owner.ownerId, owner.userId),
     getGitLabInstanceStatus(owner.ownerId),
     getAiCredential(owner.ownerId),
     getPlanLimits(owner.ownerId),
-    getUsageMeter(owner.ownerId),
-    getUsage(owner.ownerId),
   ]);
-  const billingEnabled = features().billing;
   const demoAi = isMockAi();
   const hasCredential = Boolean(credential);
   const hasManagedKey = Boolean(managedAiKey());
-  const kind = billingEnabled
-    ? resolveUsageKind(plan, aiMode, limits)
-    : hasCredential
-      ? "byok"
-      : "managed";
-  const usage = billingEnabled
-    ? { used: usageMeter.used, limit: usageMeter.limit }
-    : { used: usageCounters[kind], limit: null };
+  let kind = resolveUsageKind(plan, aiMode, limits);
+  let usage: { used: number; limit: number | null };
+
+  if (billingEnabled) {
+    const usageMeter = await getUsageMeter(owner.ownerId);
+    usage = { used: usageMeter.used, limit: usageMeter.limit };
+  } else {
+    const usageCounters = await getUsage(owner.ownerId);
+    kind = hasCredential ? "byok" : hasManagedKey ? "managed" : kind;
+    usage = { used: usageCounters[kind], limit: null };
+  }
+
   const managedAi = kind === "managed" && hasManagedKey;
   const aiReady = demoAi || (kind === "byok" ? hasCredential : hasManagedKey);
   const hasSourceConnection = Boolean(github || gitlab);

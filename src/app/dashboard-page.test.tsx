@@ -154,7 +154,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dashboard page (database)", () => {
 
     current = fresh;
     const pending = await render({ success: "true" });
-    expect(pending).toContain("Your Pro plan activates in a moment");
+    expect(pending).toContain("Your paid plan activates in a moment");
 
     const canceled = await render({ canceled: "true" });
     expect(canceled).toContain("Checkout was canceled");

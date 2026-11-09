@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({
   cookie: undefined as string | undefined,
   billing: true,
   admin: true,
-  plan: "pro" as "free" | "pro",
+  plan: "pro" as "free" | "pro" | "ultra",
   projects: [
     { id: "alpha", name: "Alpha", defaultPeriodDays: 7, template: "weekly_update" },
     { id: "beta", name: "Beta", defaultPeriodDays: 14, template: "client_report" },
@@ -90,11 +90,21 @@ describe("dashboard workflow", () => {
     expect(await render({ success: "true" })).toContain("Thanks for subscribing!");
     expect(await render({ canceled: "true" })).toContain("Checkout was canceled");
     expect(await render({ success: "true", canceled: "true" })).not.toContain("Checkout was canceled");
+
+    state.plan = "ultra";
+    expect(await render({ success: "true" })).toContain("You&#x27;re on Ultra. Thanks for subscribing!");
+    expect(await render()).toContain(">Ultra<");
+    expect(await render()).toContain("Manage billing");
+    expect(await render()).not.toContain("Upgrade to Pro");
+
     state.plan = "free";
-    expect(await render({ success: "true" })).toContain("Your Pro plan activates in a moment");
+    expect(await render({ success: "true" })).toContain("Your paid plan activates in a moment");
     expect(await render()).toContain("Upgrade to Pro");
+
     state.admin = false;
     expect(await render()).not.toContain("Upgrade to Pro");
+    expect(await render()).not.toContain("Manage billing");
+
     state.billing = false;
     expect(await render()).not.toContain(">Free<");
   });
