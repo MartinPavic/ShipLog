@@ -166,8 +166,18 @@ export async function requirePlanFeature(ownerId: string, feature: keyof typeof 
 }
 
 // Marketing copy derived from the real limits, so the pricing table can't drift from what is enforced.
-export function planHighlights(plan: Plan): string[] {
-  const l = applyFlags(PLAN_LIMITS[plan], features());
+export function planHighlights(plan: Plan, aiMode: AiMode = "managed"): string[] {
+  const base =
+    plan === "free"
+      ? PLAN_LIMITS.free
+      : plan === "pro"
+        ? aiMode === "byok"
+          ? PRO_BYOK_LIMITS
+          : PRO_MANAGED_LIMITS
+        : aiMode === "byok"
+          ? ULTRA_BYOK_LIMITS
+          : ULTRA_MANAGED_LIMITS;
+  const l = applyFlags(base, features());
   const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
   if (plan === "free") {
     return [
@@ -192,8 +202,10 @@ export function planHighlights(plan: Plan): string[] {
   }
   return [
     "Unlimited projects",
-    "Unlimited generations with your own AI key",
-    ...(l.managedAi ? [`${l.managedGenerationsPerMonth} managed-AI generations / month`] : []),
+    ...(l.byokGenerationsPerMonth === Infinity ? ["Unlimited generations with your own AI key"] : []),
+    ...(l.managedAi && l.managedGenerationsPerMonth
+      ? [`${l.managedGenerationsPerMonth} managed-AI generations / month`]
+      : []),
     "Full history",
     ...(l.scheduling || l.delivery ? ["Scheduled logs and delivery to Slack, Discord and email"] : []),
     ...(l.pdfExport ? ["PDF export"] : []),

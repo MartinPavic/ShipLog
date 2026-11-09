@@ -3,49 +3,13 @@ import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Brand } from "@/components/brand";
 import { ShipWheel } from "@/components/nautical/ship-wheel";
 import { WaveDivider } from "@/components/nautical/wave-divider";
+import { PricingSection } from "@/components/pricing-section";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { UpgradeButton } from "@/components/upgrade-button";
 import { siteConfig } from "@/config/site";
 import { features } from "@/env";
-import { planHighlights, type Plan } from "@/lib/plans";
-
-function PlanCard({ plan, name, price, highlighted }: { plan: Plan; name: string; price: React.ReactNode; highlighted?: boolean }) {
-  return (
-    <div className={`flex w-72 flex-col rounded-md border bg-card p-6 ${highlighted ? "border-brass shadow-md" : ""}`}>
-      <div className="mb-1 font-semibold">{name}</div>
-      <div className="mb-3 text-2xl font-bold">{price}</div>
-      <ul className="mb-6 space-y-1 text-sm text-muted-foreground">
-        {planHighlights(plan).map((line) => (
-          <li key={line}>• {line}</li>
-        ))}
-      </ul>
-      <div className="mt-auto">
-        <Show when="signed-out">
-          <SignInButton mode="modal">
-            <Button variant={highlighted ? "default" : "outline"} className="w-full">
-              {highlighted ? "Upgrade to Pro" : "Get started"}
-            </Button>
-          </SignInButton>
-        </Show>
-        <Show when="signed-in">
-          {highlighted ? (
-            <UpgradeButton />
-          ) : (
-            <Link href="/dashboard">
-              <Button variant="outline" className="w-full">
-                Go to Dashboard
-              </Button>
-            </Link>
-          )}
-        </Show>
-      </div>
-    </div>
-  );
-}
 
 export default function Home() {
-  const { currency, pro } = siteConfig.pricing;
   const showPricing = features().billing;
 
   return (
@@ -169,27 +133,7 @@ export default function Home() {
         </section>
         <WaveDivider flip className="text-secondary" />
 
-        {showPricing && (
-          <section className="container mx-auto px-4 py-16 text-center">
-            <h2 className="mb-4 text-2xl font-bold">Simple pricing</h2>
-            <p className="mb-8 text-muted-foreground">Free to try. Pro unlocks the full history, managed AI and automation.</p>
-            <div className="flex flex-col items-stretch justify-center gap-6 text-left sm:flex-row">
-              <PlanCard plan="free" name="Free" price={`${currency}0`} />
-              <PlanCard
-                plan="pro"
-                name="Pro"
-                highlighted
-                price={
-                  <>
-                    {currency}
-                    {pro.price}
-                    <span className="text-sm font-normal">/{pro.interval}</span>
-                  </>
-                }
-              />
-            </div>
-          </section>
-        )}
+        {showPricing && <PricingSection />}
 
         <section className="container mx-auto max-w-2xl px-4 py-16">
           <h2 className="mb-6 text-center text-2xl font-bold">Questions</h2>

@@ -19,10 +19,13 @@ export const siteConfig = {
   },
   // Appends "Made with <name>" to shared logs and public changelogs.
   publicFooter: true,
-  // Display only. Charging is configured by STRIPE_PRICE_ID.
+  // Display only. Charging is configured by the Stripe variant price environment variables.
   pricing: {
     currency: "€",
-    pro: { price: 9, interval: "mo" },
+    interval: "mo",
+    vatInclusiveLabel: "VAT included",
+    pro: { byok: 12, managed: 19 },
+    ultra: { byok: 22, managed: 29 },
   },
   // Replace the contents of /terms and /privacy before launch. While `reviewed` is false, both pages
   // show a banner saying they are templates.
@@ -69,7 +72,15 @@ export const siteConfig = {
 
 export type SiteConfig = typeof siteConfig;
 
+export type PaidTier = "pro" | "ultra";
+export type PaidAiMode = "byok" | "managed";
+
+export function paidPriceLabel(tier: PaidTier, aiMode: PaidAiMode): string {
+  const { currency, interval } = siteConfig.pricing;
+  const amount = siteConfig.pricing[tier][aiMode];
+  return `${currency}${amount}/${interval}`;
+}
+
 export function proPriceLabel(): string {
-  const { currency, pro } = siteConfig.pricing;
-  return `${currency}${pro.price}/${pro.interval}`;
+  return paidPriceLabel("pro", "managed");
 }

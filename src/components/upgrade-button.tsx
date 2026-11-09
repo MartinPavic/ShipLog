@@ -1,18 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { proPriceLabel } from "@/config/site";
+import { paidPriceLabel } from "@/config/site";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/client-api";
+import type { AiMode, Plan } from "@/lib/plans";
+
+type CheckoutVariant = { tier: Exclude<Plan, "free">; aiMode: AiMode };
 
 function RedirectButton({
   endpoint,
   label,
   variant,
+  body,
 }: {
   endpoint: string;
   label: string;
   variant?: "default" | "outline";
+  body?: unknown;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,7 +26,7 @@ function RedirectButton({
     setLoading(true);
     setError("");
     try {
-      const { url } = await apiRequest<{ url: string | null }>(endpoint, "POST");
+      const { url } = await apiRequest<{ url: string | null }>(endpoint, "POST", body);
       if (url) window.location.href = url;
       else setLoading(false);
     } catch (err) {
@@ -41,7 +46,27 @@ function RedirectButton({
 }
 
 export function UpgradeButton() {
-  return <RedirectButton endpoint="/api/stripe/checkout" label={`Upgrade to Pro — ${proPriceLabel()}`} />;
+  return (
+    <RedirectButton
+      endpoint="/api/stripe/checkout"
+      label={`Upgrade to Pro — ${paidPriceLabel("pro", "managed")}`}
+      body={{ tier: "pro", aiMode: "managed" } satisfies CheckoutVariant}
+    />
+  );
+}
+
+export function UpgradeButtonForVariant({
+  tier,
+  aiMode,
+  label,
+  variant,
+}: {
+  tier: CheckoutVariant["tier"];
+  aiMode: CheckoutVariant["aiMode"];
+  label: string;
+  variant?: "default" | "outline";
+}) {
+  return <RedirectButton endpoint="/api/stripe/checkout" label={label} body={{ tier, aiMode }} variant={variant} />;
 }
 
 export function ManageBillingButton() {

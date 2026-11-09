@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
+import { pricingCopyForMode } from "@/components/pricing-section";
 import PrivacyPage from "@/app/privacy/page";
 import TermsPage from "@/app/terms/page";
 import { siteConfig } from "@/config/site";
@@ -46,12 +47,52 @@ describe("landing page", () => {
     expect(out).toContain("Sample content only. No repository is connected.");
   });
 
-  it("shows pricing derived from the real plan limits", () => {
+  it("shows three pricing cards with BYOK selected by default and VAT-inclusive prices", () => {
     const out = html();
     expect(out).toContain("Simple pricing");
+    expect(out).toContain("Free");
+    expect(out).toContain("Pro");
+    expect(out).toContain("Ultra");
+    expect(out).toContain("BYOK");
+    expect(out).toContain("Managed AI");
+    expect(out).toContain("VAT included");
+    expect(out).toContain("5 projects");
+    expect(out).toContain("Unlimited projects");
     expect(out).toContain("5 generations / month with your own AI key");
-    expect(out).toContain("200 managed-AI generations / month");
-    expect(out).toContain(`${siteConfig.pricing.currency}${siteConfig.pricing.pro.price}`);
+    expect(out).toContain("50 generations / month with your own AI key");
+    expect(out).toContain("Unlimited generations with your own AI key");
+    expect(out).toContain(`${siteConfig.pricing.currency}12`);
+    expect(out).toContain(`${siteConfig.pricing.currency}22`);
+    expect(out).not.toContain(`${siteConfig.pricing.currency}19`);
+    expect(out).not.toContain(`${siteConfig.pricing.currency}29`);
+  });
+
+  it("switches paid copy and checkout payloads when the selector changes mode", () => {
+    expect(pricingCopyForMode("byok")).toEqual({
+      pro: {
+        price: 12,
+        highlights: ["5 projects", "50 generations / month with your own AI key"],
+        checkout: { tier: "pro", aiMode: "byok" },
+      },
+      ultra: {
+        price: 22,
+        highlights: ["Unlimited projects", "Unlimited generations with your own AI key"],
+        checkout: { tier: "ultra", aiMode: "byok" },
+      },
+    });
+
+    expect(pricingCopyForMode("managed")).toEqual({
+      pro: {
+        price: 19,
+        highlights: ["5 projects", "50 managed-AI generations / month"],
+        checkout: { tier: "pro", aiMode: "managed" },
+      },
+      ultra: {
+        price: 29,
+        highlights: ["Unlimited projects", "200 managed-AI generations / month"],
+        checkout: { tier: "ultra", aiMode: "managed" },
+      },
+    });
   });
 
   it("drops managed AI and teams from the pricing when those are switched off", () => {
