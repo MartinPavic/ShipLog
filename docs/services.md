@@ -37,6 +37,29 @@ An OAuth app allows one callback URL, so create a separate app for production. T
 
 Variables: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`.
 
+## GitLab OAuth (per workspace)
+
+GitLab.com and one self-managed GitLab instance are supported in each workspace. GitLab OAuth credentials are entered
+in **Settings** by a workspace admin; they are not deployment-wide environment variables. Every member then connects
+their own GitLab account, just as GitHub connections are personal.
+
+1. On GitLab.com, open **Edit profile, Applications**. On a self-managed instance, open the equivalent user
+   Applications settings.
+2. Create an OAuth application with the redirect URI exactly matching
+   `<NEXT_PUBLIC_APP_URL>/api/gitlab/callback`, for example `https://shiplog.example.com/api/gitlab/callback`.
+3. Grant the `read_api` and `read_user` scopes. No write scope is needed.
+4. In ShipLog **Settings**, enter the instance URL, client ID and client secret. For GitLab.com use
+   `https://gitlab.com`. For self-managed GitLab, use the public HTTPS base URL, including any installation subpath.
+5. Each member selects **Connect GitLab** and authorizes their account.
+
+The instance must be publicly reachable over HTTPS. Local, private and link-local addresses are rejected, and outbound
+requests verify DNS results before connecting, preserve TLS hostname verification, reject redirects and use bounded
+timeouts. Private-network-only GitLab installations are not supported. Each workspace can configure only one GitLab
+instance. Replacing OAuth credentials or changing the instance URL disconnects all GitLab members; changing or removing
+the URL is blocked while a project still references a GitLab repository. GitLab access and rotating refresh tokens,
+and the OAuth client secret, are encrypted at rest using `ENCRYPTION_KEY`. Repository browsing is limited to 60
+requests per member per hour.
+
 ## Stripe (optional)
 
 Skip this if you set `BILLING_ENABLED=false`.

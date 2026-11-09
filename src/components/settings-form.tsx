@@ -101,6 +101,133 @@ export function GithubCard({ login, notice }: { login: string | null; notice: st
   );
 }
 
+const GITLAB_NOTICES: Record<string, { text: string; error: boolean }> = {
+  connected: { text: "GitLab connected.", error: false },
+  denied: { text: "GitLab access was denied.", error: true },
+  invalid_state: { text: "The GitLab sign-in expired. Please try again.", error: true },
+  error: { text: "Could not complete the GitLab connection. Please try again.", error: true },
+  not_configured: { text: "Ask a workspace admin to configure GitLab first.", error: true },
+};
+
+type GitLabInstanceStatus = { baseUrl: string; clientId: string; configured: true } | null;
+
+export function GitLabCard({
+  instance,
+  username,
+  notice,
+  canManage,
+}: {
+  instance: GitLabInstanceStatus;
+  username: string | null;
+  notice: string | null;
+  canManage: boolean;
+}) {
+  const [baseUrl, setBaseUrl] = useState(instance?.baseUrl ?? "");
+  const [clientId, setClientId] = useState(instance?.clientId ?? "");
+  const [clientSecret, setClientSecret] = useState("");
+  const { loading, message, run } = useAction();
+  const shown = message ?? (notice && Object.hasOwn(GITLAB_NOTICES, notice) ? GITLAB_NOTICES[notice] : null);
+
+  async function saveConfiguration() {
+    const replacingCredentials = Boolean(instance && (clientSecret || clientId !== instance.clientId || baseUrl !== instance.baseUrl));
+    if (replacingCredentials && !window.confirm("Replacing GitLab OAuth credentials will disconnect every workspace member. Continue?")) return;
+    await run(async () => {
+      await apiRequest("/api/gitlab/config", "PUT", {
+        baseUrl,
+        clientId,
+        ...(clientSecret ? { clientSecret } : {}),
+      });
+      setClientSecret("");
+      return "GitLab settings saved";
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GitLab</CardTitle>
+        <CardDescription>
+          Configure GitLab.com or a publicly reachable self-managed instance. Each member connects their own account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {canManage ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="gitlabBaseUrl">GitLab instance URL</Label>
+              <Input id="gitlabBaseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://gitlab.com" disabled={loading} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gitlabClientId">OAuth application ID</Label>
+              <Input id="gitlabClientId" value={clientId} onChange={(event) => setClientId(event.target.value)} autoComplete="off" disabled={loading} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gitlabClientSecret">OAuth application secret</Label>
+              <Input
+                id="gitlabClientSecret"
+                type="password"
+                value={clientSecret}
+                onChange={(event) => setClientSecret(event.target.value)}
+                autoComplete="new-password"
+                placeholder={instance ? "Leave blank to keep current secret" : "Client secret"}
+                required={!instance || clientId !== instance.clientId || baseUrl !== instance.baseUrl}
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">The secret is encrypted at rest and never shown again.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button disabled={loading || !baseUrl.trim() || !clientId.trim() || (!instance && !clientSecret)} onClick={saveConfiguration}>
+                {loading ? "Saving..." : instance ? "Save GitLab settings" : "Configure GitLab"}
+              </Button>
+              {instance && (
+                <Button
+                  variant="ghost"
+                  disabled={loading}
+                  onClick={() => {
+                    if (!window.confirm("Remove the GitLab instance configuration? Existing GitLab projects must be removed first.")) return;
+                    void run(async () => {
+                      await apiRequest("/api/gitlab/config", "DELETE");
+                      setBaseUrl("");
+                      setClientId("");
+                      return "GitLab instance removed";
+                    });
+                  }}
+                >
+                  Remove instance
+                </Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Only workspace admins can configure the GitLab OAuth application.</p>
+        )}
+
+        {instance && (
+          <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+            {username ? <p className="text-sm">Connected as <strong>{username}</strong></p> : <p className="text-sm text-muted-foreground">Your GitLab account is not connected.</p>}
+            <a href="/api/gitlab/connect" className={buttonVariants({ variant: username ? "outline" : "default" })}>
+              {username ? "Reconnect GitLab" : "Connect GitLab"}
+            </a>
+            {username && (
+              <Button
+                variant="ghost"
+                disabled={loading}
+                onClick={() => void run(async () => {
+                  await apiRequest("/api/gitlab/disconnect", "DELETE");
+                  return "GitLab disconnected";
+                })}
+              >
+                Disconnect account
+              </Button>
+            )}
+          </div>
+        )}
+        <Feedback message={shown} />
+      </CardContent>
+    </Card>
+  );
+}
+
 type AiStatus = { provider: AiProvider; last4: string; model: string | null } | null;
 
 export function AiCard({ ai, canManage }: { ai: AiStatus; canManage: boolean }) {

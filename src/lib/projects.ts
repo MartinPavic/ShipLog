@@ -14,7 +14,7 @@ const active = (ownerId: string) => and(eq(projects.ownerId, ownerId), isNull(pr
 function dedupeRepos(repos: ProjectRepo[]): ProjectRepo[] {
   const seen = new Set<string>();
   return repos.filter((r) => {
-    const key = r.fullName.toLowerCase();
+    const key = `${r.provider ?? "github"}:${r.fullName.toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -52,9 +52,13 @@ export async function requireProject(ownerId: string, id: string): Promise<Proje
 export async function createProject(owner: Owner, input: CreateProjectInput, maxProjects: number) {
   await requireTemplate(owner.ownerId, input.template);
   const db = getDb();
+  const repos = dedupeRepos(input.repos);
   return db.transaction(async (tx) => {
     // Serialise creates per owner so the plan limit can't be raced.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${owner.ownerId}))`);
+    if (repos.some((repo) => repo.provider === "gitlab")) {
+      await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtext(${"gitlab-instance:" + owner.ownerId}))`);
+    }
     const [{ n }] = await tx.select({ n: count() }).from(projects).where(active(owner.ownerId));
     if (n >= maxProjects) {
       throw new ApiError(
@@ -76,7 +80,7 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
           name: input.name,
           slug: attempt === 1 ? base : `${base}-${attempt}`,
           description: input.description ?? null,
-          repos: dedupeRepos(input.repos),
+          repos,
           template: input.template,
           tone: input.tone ?? null,
           audience: input.audience ?? null,
@@ -96,17 +100,23 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
 export async function updateProject(ownerId: string, id: string, patch: UpdateProjectInput): Promise<Project> {
   await requireProject(ownerId, id);
   if (patch.template) await requireTemplate(ownerId, patch.template);
-  const [row] = await getDb()
-    .update(projects)
-    .set({
-      ...patch,
-      ...(patch.repos ? { repos: dedupeRepos(patch.repos) } : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(projects.id, id), active(ownerId)))
-    .returning();
-  if (!row) throw new ApiError(404, "Project not found", "NOT_FOUND");
-  return row;
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    if (patch.repos?.some((repo) => repo.provider === "gitlab")) {
+      await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtext(${"gitlab-instance:" + ownerId}))`);
+    }
+    const [row] = await tx
+      .update(projects)
+      .set({
+        ...patch,
+        ...(patch.repos ? { repos: dedupeRepos(patch.repos) } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(projects.id, id), active(ownerId)))
+      .returning();
+    if (!row) throw new ApiError(404, "Project not found", "NOT_FOUND");
+    return row;
+  });
 }
 
 export async function archiveProject(ownerId: string, id: string): Promise<void> {
@@ -118,7 +128,7 @@ export async function archiveProject(ownerId: string, id: string): Promise<void>
   if (rows.length === 0) throw new ApiError(404, "Project not found", "NOT_FOUND");
 }
 
-// Scheduled runs use the creator's GitHub connection, so handing a project over means changing the creator.
+// Scheduled runs use the creator's provider connections, so handing a project over means changing the creator.
 export async function takeOverProject(ownerId: string, id: string, userId: string): Promise<Project> {
   const db = getDb();
   const [row] = await db

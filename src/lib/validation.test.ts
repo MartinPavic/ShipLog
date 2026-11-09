@@ -88,6 +88,26 @@ describe("createProjectSchema", () => {
     expect(createProjectSchema.safeParse({ name: "x", repos: [{ fullName: "o/r", branch: "a b" }] }).success).toBe(false);
     expect(createProjectSchema.safeParse({ name: "x", repos: Array(21).fill({ fullName: "o/r" }) }).success).toBe(false);
   });
+
+  it("keeps legacy repositories as GitHub and accepts explicit GitLab repositories", () => {
+    expect(createProjectSchema.parse({ name: "Legacy", repos: [{ fullName: "group/project" }] }).repos).toEqual([
+      { fullName: "group/project" },
+    ]);
+    expect(createProjectSchema.parse({
+      name: "Mixed",
+      repos: [
+        { provider: "github", fullName: "group/project" },
+        { provider: "gitlab", fullName: "group/project" },
+      ],
+    }).repos).toEqual([
+      { provider: "github", fullName: "group/project" },
+      { provider: "gitlab", fullName: "group/project" },
+    ]);
+    expect(createProjectSchema.safeParse({ name: "Unknown", repos: [{ provider: "bitbucket", fullName: "g/p" }] }).success).toBe(false);
+    expect(createProjectSchema.safeParse({ name: "Malformed", repos: [{ provider: "gitlab", fullName: "not-a-project-path" }] }).success).toBe(false);
+    expect(createProjectSchema.safeParse({ name: "Traversal", repos: [{ provider: "gitlab", fullName: "group/../project" }] }).success).toBe(false);
+    expect(createProjectSchema.safeParse({ name: "Dot path", repos: [{ provider: "gitlab", fullName: "group/./project" }] }).success).toBe(false);
+  });
 });
 
 describe("updateProjectSchema", () => {

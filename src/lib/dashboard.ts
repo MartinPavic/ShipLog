@@ -14,14 +14,14 @@ export type OnboardingStep = {
   done: boolean;
 };
 
-export function buildOnboarding(input: { github: boolean; ai: boolean; firstProjectId: string | null; hasLog: boolean }) {
+export function buildOnboarding(input: { github: boolean; gitlab?: boolean; ai: boolean; firstProjectId: string | null; hasLog: boolean }) {
   const steps: OnboardingStep[] = [
     {
       id: "github",
-      title: "Connect GitHub",
-      description: `Let ${siteConfig.name} read the commits, pull requests and releases of your repositories.`,
+      title: "Connect source control",
+      description: `Connect GitHub or GitLab so ${siteConfig.name} can read repository activity.`,
       href: "/dashboard/settings",
-      done: input.github,
+      done: input.github || Boolean(input.gitlab),
     },
     {
       id: "ai",
@@ -90,6 +90,7 @@ export async function getDashboardData(owner: { ownerId: string; userId: string 
     recentLogs: recent,
     onboarding: buildOnboarding({
       github: status.github !== null,
+      gitlab: status.gitlab.connection !== null,
       ai: status.ai !== null || status.managedAi || status.demoAi,
       firstProjectId: projectRows[0]?.id ?? null,
       hasLog: totals.n > 0,

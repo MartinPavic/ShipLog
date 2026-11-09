@@ -12,6 +12,12 @@ vi.mock("@clerk/nextjs/server", () => ({
   currentUser: async () => null,
 }));
 
+const gitlabMocks = vi.hoisted(() => ({ fetchActivity: vi.fn() }));
+vi.mock("@/lib/gitlab", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/gitlab")>()),
+  fetchGitLabActivity: gitlabMocks.fetchActivity,
+}));
+
 const rand = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const SLACK = "https://hooks.slack.com/services/T0AAAA/B0BBBB/secretslacktoken1234";
 
@@ -30,6 +36,7 @@ let savedEnv: Record<string, string | undefined>;
 
 function stubFetch() {
   calls = [];
+  gitlabMocks.fetchActivity.mockReset();
   activity = [
     {
       sha: "abcdef1234567",
@@ -63,12 +70,21 @@ function stubFetch() {
 describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
   const fixtures: Fx[] = [];
 
-  async function setup(opts: { pro?: boolean; github?: boolean; ai?: boolean; channel?: boolean; schedule?: object } = {}): Promise<Fx> {
-    const { pro = true, github = true, ai: withAi = true, channel = true } = opts;
+  async function setup(opts: {
+    pro?: boolean;
+    github?: boolean;
+    gitlab?: boolean;
+    provider?: "github" | "gitlab";
+    ai?: boolean;
+    channel?: boolean;
+    schedule?: object;
+  } = {}): Promise<Fx> {
+    const { pro = true, github = true, gitlab = false, provider = "github", ai: withAi = true, channel = true } = opts;
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts, deliveryChannels } = await import("@/db/schema");
     const { encrypt } = await import("./crypto");
     const { saveGithubConnection } = await import("./github");
+    const { configureGitLabInstance, saveGitLabConnection } = await import("./gitlab-settings");
     const { createProject } = await import("./projects");
     const { createProjectSchema } = await import("./validation");
     const db = getDb();
@@ -77,10 +93,22 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const owner = { userId: fx.userId, orgId: null, ownerId: fx.ownerId, orgRole: null };
     if (pro) await db.insert(billingAccounts).values({ ownerId: fx.ownerId, plan: "pro", status: "active" });
     if (github) await saveGithubConnection(fx.userId, { login: "dev", token: "gh_token", scopes: "repo" });
+    if (gitlab) {
+      await configureGitLabInstance(fx.ownerId, {
+        baseUrl: "https://gitlab.example.com",
+        clientId: "gitlab-client",
+        clientSecret: "gitlab-client-secret",
+      });
+      await saveGitLabConnection(fx.ownerId, fx.userId, {
+        username: "creator", accessToken: "creator-gitlab-token", refreshToken: "creator-refresh",
+        expiresAt: new Date(Date.now() + 60 * 60_000), scopes: "read_api read_user",
+      });
+    }
     if (withAi) {
       await db.insert(aiCredentials).values({ ownerId: fx.ownerId, provider: "openai", encryptedKey: encrypt("sk-test"), last4: "test" });
     }
-    const project = await createProject(owner, createProjectSchema.parse({ name: "Scheduled", repos: [{ fullName: "o/r" }] }), 5);
+    const repos = provider === "gitlab" ? [{ provider: "gitlab", fullName: "group/project" }] : [{ fullName: "o/r" }];
+    const project = await createProject(owner, createProjectSchema.parse({ name: "Scheduled", repos }), 5);
     fx.projectId = project.id;
     const { projects } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -136,7 +164,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     }
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, billingAccounts, githubConnections, projects, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, billingAccounts, githubConnections, gitlabConnections, gitlabInstances, projects, usageCounters } = await import("@/db/schema");
     const owners = fixtures.map((f) => f.ownerId);
     const db = getDb();
     await db.delete(projects).where(inArray(projects.ownerId, owners));
@@ -144,6 +172,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     await db.delete(aiCredentials).where(inArray(aiCredentials.ownerId, owners));
     await db.delete(billingAccounts).where(inArray(billingAccounts.ownerId, owners));
     await db.delete(githubConnections).where(inArray(githubConnections.userId, fixtures.map((f) => f.userId)));
+    await db.delete(gitlabConnections).where(inArray(gitlabConnections.ownerId, owners));
+    await db.delete(gitlabInstances).where(inArray(gitlabInstances.ownerId, owners));
   });
 
   it("generates with the creator's connection, delivers, and records the run", async () => {
@@ -163,6 +193,35 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
 
     const { listDeliveries } = await import("./delivery");
     expect(await listDeliveries(log.id)).toMatchObject([{ kind: "slack", status: "sent" }]);
+  });
+
+  it("uses the scheduled project's creator's GitLab connection", async () => {
+    const fx = await setup({ github: false, gitlab: true, provider: "gitlab" });
+    gitlabMocks.fetchActivity.mockImplementation(async (
+      connection: { baseUrl: string; accessToken: string },
+      repos: { provider?: "github" | "gitlab"; fullName: string; branch?: string }[],
+      since: Date,
+      until: Date
+    ) => ({
+      since: since.toISOString(),
+      until: until.toISOString(),
+      repos: repos.map((repo) => ({
+        repo: repo.fullName,
+        commits: [{ sha: "gitlab1", message: "GitLab release", author: "creator", date: since.toISOString(), url: "https://gitlab.example.com/group/project/-/commit/gitlab1" }],
+        pullRequests: [], issues: [], releases: [],
+        omitted: { commits: 0, pullRequests: 0, issues: 0, releases: 0 },
+      })),
+    }));
+    const summary = await run(fx);
+    expect(summary.generated).toBe(1);
+    expect(gitlabMocks.fetchActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "creator-gitlab-token" }),
+      [{ provider: "gitlab", fullName: "group/project" }],
+      expect.any(Date),
+      expect.any(Date)
+    );
+    const [log] = await logsOf(fx);
+    expect((log.sourceSnapshot as { repos: { repo: string }[] }).repos[0].repo).toBe("group/project");
   });
 
   it("is idempotent for a slot, even with parallel ticks", async () => {

@@ -80,7 +80,7 @@ describe("dashboard workflow", () => {
 
   it("preserves GitHub and AI setup blockers", async () => {
     state.github = false;
-    expect(await render()).toContain("Connect GitHub first.");
+    expect(await render()).toContain("Connect GitHub or GitLab first.");
     state.github = true;
     state.canGenerate = false;
     expect(await render()).toContain("Add an AI API key first.");

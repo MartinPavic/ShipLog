@@ -1,4 +1,4 @@
-import { AiCard, GithubCard } from "@/components/settings-form";
+import { AiCard, GitLabCard, GithubCard } from "@/components/settings-form";
 import { ManageBillingButton, UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,9 +39,9 @@ function BillingCard({ plan, canManage }: { plan: "free" | "pro"; canManage: boo
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ github?: string }>;
+  searchParams: Promise<{ github?: string; gitlab?: string }>;
 }) {
-  const { github: githubNotice } = await searchParams;
+  const { github: githubNotice, gitlab: gitlabNotice } = await searchParams;
   const owner = await getOwner();
   const status = await getSetupStatus(owner);
   const canManage = isAdmin(owner);
@@ -51,7 +51,7 @@ export default async function SettingsPage({
       <div>
         <h1 className="text-2xl font-bold mb-2">Settings</h1>
         <p className="text-muted-foreground">
-          Connect your GitHub and AI provider so {siteConfig.name} can generate reports.
+          Connect your source control and AI provider so {siteConfig.name} can generate reports.
         </p>
         {owner.orgId && (
           <p className="mt-2 text-sm text-muted-foreground">
@@ -63,6 +63,12 @@ export default async function SettingsPage({
       </div>
 
       <GithubCard login={status.github?.login ?? null} notice={githubNotice ?? null} />
+      <GitLabCard
+        instance={status.gitlab.instance}
+        username={status.gitlab.connection?.username ?? null}
+        notice={gitlabNotice ?? null}
+        canManage={canManage}
+      />
       {status.demoAi ? (
         <Card>
           <CardHeader>

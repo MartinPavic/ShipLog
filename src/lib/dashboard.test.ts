@@ -42,6 +42,7 @@ describe("buildOnboarding", () => {
 
   it("advances to the first unfinished step", () => {
     expect(buildOnboarding({ ...none, github: true }).next?.id).toBe("ai");
+    expect(buildOnboarding({ ...none, gitlab: true }).next?.id).toBe("ai");
     expect(buildOnboarding({ ...none, github: true, ai: true }).next?.id).toBe("project");
     const withProject = buildOnboarding({ github: true, ai: true, firstProjectId: "abc", hasLog: false });
     expect(withProject.next?.id).toBe("log");

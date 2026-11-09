@@ -21,6 +21,10 @@ needs action.
 5. `npm run typecheck && npm run lint && npm test && npm run build`.
 6. Deploy.
 
+The GitLab integration adds workspace OAuth configuration and member connection tables. Existing repository entries
+without a provider continue to use GitHub; no repository data backfill is required. After applying the migration, a
+workspace admin can configure GitLab in Settings and members can connect their accounts.
+
 ## Tips
 
 - Keep your changes small and in the files above, and put new behavior in new files. That makes the next upgrade a

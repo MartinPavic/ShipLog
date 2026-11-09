@@ -4,6 +4,7 @@
 
 - Node.js 22.12 or newer and npm.
 - Free accounts at [Clerk](https://clerk.com) (sign-in), [Neon](https://neon.com) (Postgres) and GitHub (an OAuth app).
+	GitLab is optional and configured by a workspace admin in Settings.
 - Optional: [Stripe](https://stripe.com) for paid plans, [Resend](https://resend.com) for email, an OpenAI key for managed AI.
 
 [Service setup](services.md) walks through each account. None of the optional ones is needed to start.
@@ -37,7 +38,8 @@ production rules and `--db` to test the database connection). It exits with code
 ## First run
 
 1. Open <http://localhost:3000> and sign up.
-2. In **Settings**, connect GitHub, then add an AI key (or enable demo mode, below).
+2. In **Settings**, connect GitHub or have an admin configure GitLab and connect your GitLab account, then add an AI key
+	(or enable demo mode, below).
 3. Create a project, pick repositories and a template, and click **Generate**.
 
 ## Look around without GitHub or an AI key
@@ -54,8 +56,8 @@ npm run seed
 ```
 
 This adds a demo project with four weekly logs, their source activity and a version history to your newest account.
-Demo mode replaces AI calls with a deterministic placeholder generator; you still need GitHub connected to generate
-new logs. The demo project counts toward your plan's project limit. Remove it with `npm run seed -- --remove`, or
+Demo mode replaces AI calls with a deterministic placeholder generator; you still need the source connection required
+by your project's repositories to generate new logs. The demo project counts toward your plan's project limit. Remove it with `npm run seed -- --remove`, or
 recreate it with `npm run seed -- --reset`. See `scripts/seed.ts` for the other options (`--owner`, `--usage`, `--yes`).
 
 ## Useful commands

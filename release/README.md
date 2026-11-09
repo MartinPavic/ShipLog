@@ -11,7 +11,8 @@ Nothing here is legal advice: have the license and the Terms and Privacy templat
    buyers may build and sell a SaaS on top, but may not resell or redistribute the source or ship it as a boilerplate.
 3. Add your own strings to `forbiddenStrings` in `release/config.json` (name, hosted project ids, internal domains). The
    scan fails the release if any appear in a file that would ship.
-4. Rotate every development key you ever put in `.env.local` (Clerk, Stripe, GitHub OAuth, Resend, OpenAI, Neon). The
+4. Rotate every development key you ever put in `.env.local` (Clerk, Stripe, GitHub OAuth, Resend, OpenAI, Neon), and
+   replace any GitLab OAuth credentials used by development workspaces. The
    scan also looks for the exact values currently in your `.env.local`, but rotating is the real protection.
 5. Decide and write down the refund policy (see "Listing" below).
 
@@ -51,7 +52,8 @@ Verify the download after uploading: `shasum -a 256 -c <zip>.sha256`.
 ## Before the first sale
 
 - [ ] **Fresh-machine test.** In a new directory, with only the zip and its docs, and brand-new Clerk, Neon, GitHub OAuth
-      and (test-mode) Stripe accounts: follow `docs/getting-started.md` and the service setup. Write down every place you
+   and (test-mode) Stripe accounts: follow `docs/getting-started.md` and the service setup. Configure GitLab OAuth too
+   if validating that optional integration. Write down every place you
       got stuck and fix the docs or `scripts/setup.ts`. Repeat until it works without help.
 - [ ] **Flags-off run.** Start with `BILLING_ENABLED=false`, `MANAGED_AI_ENABLED=false`, `TEAMS_ENABLED=false`,
       `SCHEDULING_ENABLED=false`, `DELIVERY_ENABLED=false` and confirm the UI shows none of those features.
@@ -69,7 +71,7 @@ status-update product) that a buyer can rebrand and launch, not as "a Next.js st
 
 **Title.** ShipLog: AI changelog and status-update SaaS, source code (Next.js, Clerk, Stripe, Postgres)
 
-**Short description.** Launch your own AI-powered "ship log" product: GitHub activity in, polished weekly updates,
+**Short description.** Launch your own AI-powered "ship log" product: GitHub or GitLab activity in, polished weekly updates,
 changelogs and client reports out. Auth, teams, billing, scheduling and delivery included.
 
 **Description (outline).**
@@ -78,14 +80,14 @@ changelogs and client reports out. Auth, teams, billing, scheduling and delivery
 2. What the end product does (copy the feature list from `README.md`).
 3. What you get: full Next.js 16 source, Drizzle migrations, setup and seed scripts, documentation, CI workflow, license
    and third-party notices, free updates for v1.x.
-4. What you need: Node 22.12+, and accounts at Clerk, Neon and GitHub (all have free tiers), plus optional Stripe, Resend and an
-   OpenAI key. Everything optional can be switched off with a feature flag.
+4. What you need: Node 22.12+, and accounts at Clerk, Neon and GitHub (all have free tiers), plus optional GitLab, Stripe,
+   Resend and an OpenAI key. Everything optional can be switched off with a feature flag.
 5. How fast you can run it: `npm install`, `npm run setup`, `npm run dev`.
 6. License summary: one developer, one end product, build and sell a SaaS on top, no resale or redistribution of the source.
 7. Support policy (below) and refund policy.
 
 **What is not included.** Hosting, third-party service accounts, legal documents (the Terms and Privacy pages are templates
-you must replace), design customization, and per-seat billing, GitLab/Bitbucket support, or server-side PDF generation.
+you must replace), design customization, per-seat billing, Bitbucket support, or server-side PDF generation.
 
 **Price.** Test a launch price in the $79 to $149 range and adjust on evidence.
 
@@ -117,7 +119,7 @@ either feature.
 
 - **Releases.** Semantic version tags, an entry in `CHANGELOG.md`, `npm run release`, upload the new zip to the product, and
   email buyers through Gumroad. Breaking changes and required migrations must be called out in the changelog.
-- **Support load.** Buyers will use different Clerk, Stripe, Neon and GitHub setups. Improve `docs/` and
+- **Support load.** Buyers will use different Clerk, Stripe, Neon, GitHub and GitLab setups. Improve `docs/` and
   `npm run setup -- --check` whenever the same question comes twice.
 - **Risk.** Once delivered the zip can be shared. The license and good updates are the only real protection.
 - **Deferred:** private-repository invite automation.

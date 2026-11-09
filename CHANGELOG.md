@@ -7,6 +7,9 @@ follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- GitLab.com and public HTTPS self-managed GitLab support, including per-workspace OAuth configuration, personal member
+  connections, mixed GitHub/GitLab projects and normalized activity generation. Requires `npm run db:migrate`; existing
+  untagged project repositories remain GitHub.
 - Templates page: create, edit and delete your own generation templates, or duplicate a built-in one. Custom templates
   can be chosen per project and per run. Requires running `npm run db:migrate` (new `custom_templates` table).
 

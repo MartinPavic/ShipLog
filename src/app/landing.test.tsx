@@ -25,11 +25,25 @@ describe("landing page", () => {
     const out = html();
     expect(out).toContain(siteConfig.name);
     expect(out).toContain(siteConfig.description);
+    expect(out).toContain("GitLab activity");
+    expect(out).toContain("self-managed GitLab");
     for (const f of siteConfig.features) expect(out).toContain(f.title);
     for (const item of siteConfig.faq) expect(out).toContain(item.q);
     expect(out).toContain(`mailto:${siteConfig.supportEmail}`);
     expect(out).toContain('href="/terms"');
     expect(out).toContain('href="/privacy"');
+  });
+
+  it("shows a clearly fictional report sample for clients and internal teams before feature and pricing details", () => {
+    const out = html();
+    expect(out).toContain("A week of work, two useful updates");
+    expect(out).toContain("Fictional sample activity");
+    expect(out).toContain("For clients");
+    expect(out).toContain("For your team");
+    expect(out).toContain("Client report");
+    expect(out).toContain("Weekly update");
+    expect(out.indexOf("A week of work, two useful updates")).toBeLessThan(out.indexOf("Connect GitHub or GitLab"));
+    expect(out).toContain("Sample content only. No repository is connected.");
   });
 
   it("shows pricing derived from the real plan limits", () => {

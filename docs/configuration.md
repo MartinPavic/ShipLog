@@ -16,7 +16,7 @@ with `npm run setup -- --check`. The rules live in [`src/env.ts`](../src/env.ts)
 | `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` | No | `/dashboard` | Where users land after signing in or up. |
 | `DATABASE_URL` | Yes | | Postgres connection string used by the app (the pooled URL on Neon). |
 | `DATABASE_URL_UNPOOLED` | For migrations | `DATABASE_URL` | Direct connection used by `drizzle-kit` for `npm run db:migrate`. |
-| `ENCRYPTION_KEY` | Yes | | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored GitHub tokens, AI keys and webhook URLs, and signs share-link cookies. **Changing it makes stored secrets unreadable.** |
+| `ENCRYPTION_KEY` | Yes | | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored GitHub and GitLab tokens, GitLab OAuth client secrets, AI keys and webhook URLs, and signs application cookies. **Changing it makes stored secrets unreadable.** |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Yes | | GitHub OAuth app. |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | If billing is on | | Stripe secret key, the Pro price, and the webhook signing secret. |
 | `OPENAI_API_KEY` | No | | Server key for managed AI on Pro. |
@@ -41,8 +41,9 @@ plan lacks. They are read at runtime, so changing one needs a restart, not a reb
 
 ## Demo mode
 
-`AI_PROVIDER=mock` builds a deterministic placeholder log from the real GitHub activity. No provider is called and no
-key is needed. Usage limits still apply, and the log is stored with provider `mock`. Use it for demos and local testing.
+`AI_PROVIDER=mock` builds a deterministic placeholder log from the real GitHub or GitLab activity. No AI provider is
+called and no AI key is needed. Usage limits still apply, and the log is stored with provider `mock`. Use it for demos
+and local testing.
 
 ## Plan limits
 

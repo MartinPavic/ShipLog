@@ -41,7 +41,7 @@ export const DEFAULT_SCHEDULE: ScheduleValues = {
 export type ProjectFormValues = {
   name: string;
   description: string;
-  repos: { fullName: string; branch?: string }[];
+  repos: { provider?: "github" | "gitlab"; fullName: string; branch?: string }[];
   template: string;
   tone: string;
   audience: string;
@@ -67,9 +67,10 @@ const EMPTY: ProjectFormValues = {
 type RepoSummary = { fullName: string; private: boolean; description: string | null };
 type Repo = ProjectFormValues["repos"][number];
 
-const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+const repoKey = (repo: Repo) => `${repo.provider ?? "github"}:${repo.fullName.toLowerCase()}`;
 
 function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo[]) => void }) {
+  const [provider, setProvider] = useState<"github" | "gitlab">("github");
   const [available, setAvailable] = useState<RepoSummary[]>([]);
   const [nextPage, setNextPage] = useState<number | null>(1);
   const [loaded, setLoaded] = useState(false);
@@ -78,10 +79,23 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
   const [filter, setFilter] = useState("");
   const [manual, setManual] = useState("");
 
-  const selected = new Set(value.map((r) => r.fullName.toLowerCase()));
+  const selected = new Set(value.map(repoKey));
+  const manualValid = provider === "github"
+    ? /^[\w.-]+\/[\w.-]+$/.test(manual.trim())
+    : /^[\w.-]+(?:\/[\w.-]+)+$/.test(manual.trim()) && manual.trim().split("/").every((segment) => segment !== "." && segment !== "..");
   const add = (fullName: string) => {
-    if (!selected.has(fullName.toLowerCase())) onChange([...value, { fullName }]);
+    const repo = { provider, fullName };
+    if (!selected.has(repoKey(repo))) onChange([...value, repo]);
   };
+
+  function changeProvider(nextProvider: "github" | "gitlab") {
+    setProvider(nextProvider);
+    setAvailable([]);
+    setNextPage(1);
+    setLoaded(false);
+    setError("");
+    setFilter("");
+  }
 
   async function loadMore() {
     if (!nextPage) return;
@@ -89,7 +103,7 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
     setError("");
     try {
       const data = await apiRequest<{ repos: RepoSummary[]; nextPage: number | null }>(
-        `/api/github/repos?page=${nextPage}&per_page=50`,
+        `/api/${provider}/repos?page=${nextPage}&per_page=50`,
         "GET"
       );
       setAvailable((prev) => [...prev, ...data.repos]);
@@ -97,8 +111,8 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
       setLoaded(true);
     } catch (err) {
       setError(
-        err instanceof ApiClientError && err.code === "NO_GITHUB"
-          ? "Connect GitHub in Settings to browse your repositories, or add them by name below."
+        err instanceof ApiClientError && (err.code === "NO_GITHUB" || err.code === "NO_GITLAB")
+          ? `Connect ${provider === "github" ? "GitHub" : "GitLab"} in Settings to browse your repositories, or add them by name below.`
           : err instanceof Error
             ? err.message
             : "Could not load repositories"
@@ -115,18 +129,19 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
       {value.length > 0 && (
         <ul className="space-y-2">
           {value.map((repo, i) => (
-            <li key={repo.fullName} className="flex items-center gap-2">
+            <li key={repoKey(repo)} className="flex items-center gap-2">
+              <span className="w-14 shrink-0 text-xs text-muted-foreground">{repo.provider ?? "github"}</span>
               <span className="flex-1 truncate text-sm font-medium">{repo.fullName}</span>
               <Input
                 className="w-36"
                 placeholder="branch (optional)"
-                aria-label={`Branch for ${repo.fullName}`}
+                aria-label={`Branch for ${repo.fullName} on ${repo.provider ?? "GitHub"}`}
                 value={repo.branch ?? ""}
                 onChange={(e) =>
                   onChange(value.map((r, j) => (j === i ? { ...r, branch: e.target.value || undefined } : r)))
                 }
               />
-              <Button type="button" variant="ghost" size="sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+              <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${repo.fullName}`} onClick={() => onChange(value.filter((_, j) => j !== i))}>
                 Remove
               </Button>
             </li>
@@ -134,15 +149,28 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
         </ul>
       )}
 
-      <div className="flex gap-2">
+      <div className="grid gap-3 sm:grid-cols-[10rem_1fr_auto]">
+        <Select
+          value={provider}
+          items={{ github: "GitHub", gitlab: "GitLab" }}
+          onValueChange={(value) => value && changeProvider(value as "github" | "gitlab")}
+        >
+          <SelectTrigger aria-label="Repository provider">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="github">GitHub</SelectItem>
+            <SelectItem value="gitlab">GitLab</SelectItem>
+          </SelectContent>
+        </Select>
         <Input
-          placeholder="owner/repo"
+          placeholder={provider === "github" ? "owner/repo" : "group/subgroup/project"}
           value={manual}
           onChange={(e) => setManual(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              if (REPO_RE.test(manual.trim())) {
+              if (manualValid) {
                 add(manual.trim());
                 setManual("");
               }
@@ -152,7 +180,7 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
         <Button
           type="button"
           variant="outline"
-          disabled={!REPO_RE.test(manual.trim())}
+          disabled={!manualValid}
           onClick={() => {
             add(manual.trim());
             setManual("");
@@ -164,7 +192,7 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
 
       {!loaded && (
         <Button type="button" variant="outline" size="sm" disabled={loading} onClick={loadMore}>
-          {loading ? "Loading..." : "Browse my GitHub repositories"}
+          {loading ? "Loading..." : `Browse my ${provider === "github" ? "GitHub" : "GitLab"} repositories`}
         </Button>
       )}
       {error && <p className="text-sm text-danger">{error}</p>}
@@ -178,11 +206,11 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={selected.has(repo.fullName.toLowerCase())}
+                    checked={selected.has(repoKey({ provider, fullName: repo.fullName }))}
                     onChange={(e) =>
                       e.target.checked
                         ? add(repo.fullName)
-                        : onChange(value.filter((r) => r.fullName.toLowerCase() !== repo.fullName.toLowerCase()))
+                        : onChange(value.filter((r) => repoKey(r) !== repoKey({ provider, fullName: repo.fullName })))
                     }
                   />
                   <span className="truncate">{repo.fullName}</span>

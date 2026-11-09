@@ -209,8 +209,8 @@ async function OverviewTab({
     listLogs(owner.ownerId, projectId, logListQuerySchema.parse({ pageSize: 5 }), limits),
     getUsageMeter(owner.ownerId),
   ]);
-  const setupMessage = !status.github
-    ? "Connect GitHub first."
+  const setupMessage = !status.github && !status.gitlab.connection
+    ? "Connect GitHub or GitLab first."
     : !status.canGenerate
       ? "Add an AI API key first."
       : null;

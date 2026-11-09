@@ -7,7 +7,7 @@ export const siteConfig = {
   tagline: "Keep the captain's log.",
   taglineMuted: "Let your commits write it.",
   description:
-    "ShipLog turns your GitHub commits, pull requests and releases into clean weekly updates, changelogs and client reports.",
+    "ShipLog turns GitHub and GitLab activity into clean weekly updates, changelogs and client reports. Mix repositories from both, including your self-managed GitLab instance.",
   // Shown in the footer and in places where a person may need to reach you.
   supportEmail: "support@example.com",
   // Optional logo shown next to the name. Put the file in /public and reference it, e.g. "/logo.svg".
@@ -35,8 +35,8 @@ export const siteConfig = {
   },
   features: [
     {
-      title: "Connect GitHub",
-      body: "Sign in with GitHub and pick the repositories. We read commits, merged pull requests, closed issues and releases.",
+      title: "Connect GitHub or GitLab",
+      body: "Connect GitHub or GitLab, including a self-managed instance, and mix repositories in one report. We read commits, merged pull requests, closed issues and releases.",
     },
     {
       title: "AI writes the report",
@@ -49,8 +49,8 @@ export const siteConfig = {
   ],
   faq: [
     {
-      q: "What does it read from GitHub?",
-      a: "Commits, merged pull requests, closed issues and releases of the repositories you select. Merge commits and bot authors are skipped. The access token is stored encrypted.",
+      q: "What does it read from GitHub and GitLab?",
+      a: "Commits, merged pull requests, closed issues and releases of the repositories you select. You can mix GitHub and GitLab repositories, including one publicly reachable self-managed GitLab instance per workspace. Merge commits and bot authors are skipped; access tokens are encrypted.",
     },
     {
       q: "Which AI providers can I use?",

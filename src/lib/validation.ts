@@ -56,12 +56,25 @@ const optionalText = (max: number) =>
     .optional();
 
 const repoSchema = z.object({
-  fullName: repoNameSchema,
+  provider: z.enum(["github", "gitlab"]).optional(),
+  fullName: z.string().trim().min(3).max(255),
   branch: z
     .string()
     .trim()
     .regex(/^[\w./-]{1,100}$/, "Invalid branch name")
     .optional(),
+}).superRefine((repo, ctx) => {
+  const gitlabSegments = repo.fullName.split("/");
+  const valid = repo.provider === "gitlab"
+    ? /^[\w.-]+(?:\/[\w.-]+)+$/.test(repo.fullName) && gitlabSegments.every((segment) => segment !== "." && segment !== "..")
+    : repoNameSchema.safeParse(repo.fullName).success;
+  if (!valid) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["fullName"],
+      message: repo.provider === "gitlab" ? "GitLab repository must look like namespace/project" : "GitHub repository must look like owner/repo",
+    });
+  }
 });
 
 const projectFields = {

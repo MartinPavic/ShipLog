@@ -13,7 +13,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { AI_PROVIDERS } from "@/lib/ai/models";
 
-export type ProjectRepo = { fullName: string; branch?: string };
+export type RepoProvider = "github" | "gitlab";
+export type ProjectRepo = { provider?: RepoProvider; fullName: string; branch?: string };
 
 export type ProjectSchedule = {
   enabled: boolean;
@@ -76,6 +77,33 @@ export const githubConnections = pgTable("github_connections", {
   scopes: text("scopes").notNull().default(""),
   createdAt: createdAt(),
 });
+
+export const gitlabInstances = pgTable("gitlab_instances", {
+  ownerId: text("owner_id").primaryKey(),
+  baseUrl: text("base_url").notNull(),
+  clientId: text("client_id").notNull(),
+  encryptedClientSecret: text("encrypted_client_secret").notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const gitlabConnections = pgTable(
+  "gitlab_connections",
+  {
+    ownerId: text("owner_id").notNull(),
+    userId: text("user_id").notNull(),
+    username: text("username").notNull(),
+    encryptedAccessToken: text("encrypted_access_token").notNull(),
+    encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    scopes: text("scopes").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ownerId, t.userId] }),
+    index("gitlab_connections_user_idx").on(t.userId),
+  ]
+);
 
 export const aiCredentials = pgTable(
   "ai_credentials",

@@ -5,8 +5,8 @@ The startup check found a missing or malformed variable and listed it. Fix it, o
 `npm run setup -- --check --production` to see the same list.
 
 **"ENCRYPTION_KEY must be 32 bytes".**
-Generate one with `openssl rand -base64 32`. After changing the key, previously stored GitHub tokens and AI keys cannot
-be read: reconnect GitHub and re-enter the AI key.
+Generate one with `openssl rand -base64 32`. After changing the key, previously stored GitHub/GitLab tokens, GitLab
+OAuth secrets and AI keys cannot be read: reconnect the source accounts and re-enter affected credentials.
 
 **Every request returns 500 after editing `src/proxy.ts`.**
 Clerk route matcher patterns cannot contain nested capture groups. `next build` does not catch this, so request an API
@@ -18,6 +18,11 @@ Enable Organizations in the Clerk dashboard, or set `TEAMS_ENABLED=false`.
 **Connecting GitHub redirects back with "not configured".**
 Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. If GitHub shows a redirect URI mismatch, the OAuth app's callback URL
 must be exactly `<NEXT_PUBLIC_APP_URL>/api/github/callback`.
+
+**Connecting GitLab fails or returns to Settings with an error.**
+Check that a workspace admin configured the correct GitLab host, OAuth client ID and secret, and that the app's
+redirect URI is exactly `<NEXT_PUBLIC_APP_URL>/api/gitlab/callback` with the `read_api` and `read_user` scopes. A
+self-managed instance must be publicly reachable over HTTPS; private and local hosts are deliberately rejected.
 
 **"Add your AI API key in Settings first."**
 The workspace has no key and managed AI is not available to it (Free plan, `MANAGED_AI_ENABLED=false`, or no
@@ -33,14 +38,15 @@ events are selected, and the delivery log in the Stripe dashboard.
 
 **Scheduled logs never run.**
 Check that `CRON_SECRET` is set, that something calls the cron endpoint hourly, and that the project's schedule is
-enabled. The project's Settings tab shows the last run and why it was skipped. The project creator's GitHub connection is
-used; in an organization an admin can take the schedule over from the project's settings.
+enabled. The project's Settings tab shows the last run and why it was skipped. The project creator's GitHub or GitLab
+connection is used; in an organization an admin can take the schedule over from the project's settings.
 
 **`/api/health` reports `"schemaReady": false`.**
 The migrations have not been applied to that database. Run `npm run db:migrate` with `DATABASE_URL_UNPOOLED` set.
 
 **Database tests fail to connect.**
-Check `DATABASE_URL` and, on Neon, that the branch is awake. Without `DATABASE_URL` those suites are skipped.
+Point `DATABASE_URL` at a disposable local Postgres database with migrations applied. Never run database tests against
+production or a shared development database. Without `DATABASE_URL` those suites are skipped.
 
 **`npm run setup` says it is interactive.**
 It needs a terminal. In scripts and CI use `npm run setup -- --check`.

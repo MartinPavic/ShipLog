@@ -5,8 +5,10 @@ import { resolveAiAccess, type AiAccess } from "@/lib/ai/access";
 import { complete, openCompletionStream } from "@/lib/ai/providers";
 import { buildSystemPrompt, buildUserPrompt, defaultLogTitle } from "@/lib/ai/templates";
 import { ApiError } from "@/lib/api";
-import { fetchActivity, getGithubConnection, listRecentlyPushedRepos } from "@/lib/github";
-import { formatActivity, isActivityEmpty, type Activity } from "@/lib/github-activity";
+import { fetchActivity as fetchGitHubActivity, getGithubConnection, listRecentlyPushedRepos } from "@/lib/github";
+import { fetchGitLabActivity, listRecentlyPushedGitLabRepos } from "@/lib/gitlab";
+import { getFreshGitLabConnection, getGitLabConnectionStatus } from "@/lib/gitlab-settings";
+import { applyBudget, formatActivity, isActivityEmpty, type Activity } from "@/lib/github-activity";
 import type { ShipLog } from "@/lib/logs";
 import type { Owner } from "@/lib/owner";
 import type { Project } from "@/lib/projects";
@@ -52,8 +54,22 @@ type Prepared = {
 // Reserves usage and gathers everything needed for the AI call; releases the usage on failure.
 async function prepare(input: GenerateInput): Promise<Prepared> {
   const { owner, project, existing } = input;
-  const github = await getGithubConnection(owner.userId);
-  if (!github) throw new ApiError(400, "Connect GitHub in Settings first.", "NO_GITHUB");
+  const providers = project.repos.length
+    ? new Set(project.repos.map((repo) => repo.provider ?? "github"))
+    : new Set(["github", "gitlab"] as const);
+  const [github, gitlabStatus] = await Promise.all([
+    providers.has("github") ? getGithubConnection(owner.userId) : Promise.resolve(null),
+    providers.has("gitlab") ? getGitLabConnectionStatus(owner.ownerId, owner.userId) : Promise.resolve(null),
+  ]);
+  if (providers.has("github") && !github && project.repos.length > 0) {
+    throw new ApiError(400, "Connect GitHub in Settings to use this project's repositories.", "NO_GITHUB");
+  }
+  const gitlab = providers.has("gitlab") && (project.repos.length > 0 || gitlabStatus)
+    ? await getFreshGitLabConnection(owner.ownerId, owner.userId)
+    : null;
+  if (!github && !gitlab) {
+    throw new ApiError(400, "Connect GitHub or GitLab in Settings first.", "NO_SOURCE_CONNECTION");
+  }
   const ai = await resolveAiAccess(owner.ownerId);
 
   // Reserve before doing work so parallel requests can't bypass the limit.
@@ -69,8 +85,25 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       : ((existing && (await getTemplate(owner.ownerId, existing.template))) ||
         (await requireTemplate(owner.ownerId, project.template)));
 
-    const repos = project.repos.length ? project.repos : await listRecentlyPushedRepos(github.token, period.start);
-    const activity = await fetchActivity(github.token, repos, period.start, period.end);
+    let repos = project.repos;
+    if (!repos.length) {
+      const [githubRepos, gitlabRepos] = await Promise.all([
+        github ? listRecentlyPushedRepos(github.token, period.start) : Promise.resolve([]),
+        gitlab ? listRecentlyPushedGitLabRepos(gitlab, period.start) : Promise.resolve([]),
+      ]);
+      repos = [...githubRepos.map((repo) => ({ ...repo, provider: "github" as const })), ...gitlabRepos];
+    }
+    const githubRepos = repos.filter((repo) => (repo.provider ?? "github") === "github");
+    const gitlabRepos = repos.filter((repo) => repo.provider === "gitlab");
+    const activities = await Promise.all([
+      ...(githubRepos.length && github ? [fetchGitHubActivity(github.token, githubRepos, period.start, period.end)] : []),
+      ...(gitlabRepos.length && gitlab ? [fetchGitLabActivity(gitlab, gitlabRepos, period.start, period.end)] : []),
+    ]);
+    const activity: Activity = {
+      since: period.start.toISOString(),
+      until: period.end.toISOString(),
+      repos: applyBudget(activities.flatMap((result) => result.repos)),
+    };
     if (isActivityEmpty(activity)) {
       throw new ApiError(
         400,

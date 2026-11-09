@@ -13,7 +13,7 @@ describe("OnboardingChecklist", () => {
   it("shows progress and a single call to action for the next step", () => {
     const html = render({ github: true, ai: false, firstProjectId: null, hasLog: false });
     expect(html).toContain("1 of 4 steps done");
-    expect(html).toContain("Connect GitHub");
+    expect(html).toContain("Connect source control");
     expect(html).toContain("(done)");
     // Only the next step gets a button; its description is shown, completed ones are struck through.
     expect(html.match(/href="\/dashboard\/settings"/g)).toHaveLength(1);

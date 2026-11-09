@@ -6,6 +6,12 @@ try {
 
 import { resolvePeriod } from "./generation";
 
+const gitlabMocks = vi.hoisted(() => ({ fetchActivity: vi.fn() }));
+vi.mock("@/lib/gitlab", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/gitlab")>()),
+  fetchGitLabActivity: gitlabMocks.fetchActivity,
+}));
+
 describe("resolvePeriod", () => {
   const now = new Date("2026-10-14T12:00:00Z");
   const day = 24 * 60 * 60 * 1000;
@@ -111,13 +117,15 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
   afterAll(async () => {
     const { eq } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, customTemplates, githubConnections, projects, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, customTemplates, githubConnections, gitlabConnections, gitlabInstances, projects, usageCounters } = await import("@/db/schema");
     const db = getDb();
     await db.delete(projects).where(eq(projects.ownerId, owner.ownerId));
     await db.delete(customTemplates).where(eq(customTemplates.ownerId, owner.ownerId));
     await db.delete(usageCounters).where(eq(usageCounters.ownerId, owner.ownerId));
     await db.delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
     await db.delete(githubConnections).where(eq(githubConnections.userId, owner.userId));
+    await db.delete(gitlabConnections).where(eq(gitlabConnections.ownerId, owner.ownerId));
+    await db.delete(gitlabInstances).where(eq(gitlabInstances.ownerId, owner.ownerId));
   });
 
   function stubApis() {
@@ -159,6 +167,55 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     const { asActivity } = await import("./github-activity");
     expect(asActivity(log.sourceSnapshot)?.repos[0].commits[0].message).toBe("Add search");
     expect(await usage()).toBe(1);
+  });
+
+  it("generates from GitLab-only and mixed GitHub/GitLab projects", async () => {
+    stubApis();
+    const { configureGitLabInstance, saveGitLabConnection } = await import("./gitlab-settings");
+    const { createProject } = await import("./projects");
+    const { createProjectSchema } = await import("./validation");
+    await configureGitLabInstance(owner.ownerId, {
+      baseUrl: "https://gitlab.example.com",
+      clientId: "gitlab-client",
+      clientSecret: "gitlab-client-secret",
+    });
+    await saveGitLabConnection(owner.ownerId, owner.userId, {
+      username: "dev", accessToken: "gl_access", refreshToken: "gl_refresh",
+      expiresAt: new Date(Date.now() + 60 * 60_000), scopes: "read_api read_user",
+    });
+    gitlabMocks.fetchActivity.mockImplementation(async (
+      _connection: { baseUrl: string; accessToken: string },
+      repos: { provider?: "github" | "gitlab"; fullName: string; branch?: string }[],
+      since: Date,
+      until: Date
+    ) => ({
+      since: since.toISOString(),
+      until: until.toISOString(),
+      repos: repos.map((repo) => ({
+        repo: repo.fullName,
+        commits: [{ sha: "gitlab1", message: "Ship GitLab change", author: "dev", date: since.toISOString(), url: "https://gitlab.example.com/group/project/-/commit/gitlab1" }],
+        pullRequests: [], issues: [], releases: [],
+        omitted: { commits: 0, pullRequests: 0, issues: 0, releases: 0 },
+      })),
+    }));
+
+    const { startStreamingGeneration } = await import("./generation");
+    const gitlabProject = await createProject(owner, createProjectSchema.parse({
+      name: "GitLab only", repos: [{ provider: "gitlab", fullName: "group/project" }],
+    }), 5);
+    const gitlabGeneration = await startStreamingGeneration({ owner, project: gitlabProject, period: { days: 7 } });
+    await gitlabGeneration.finish(await collect(gitlabGeneration.stream));
+    const gitlabLog = await logRow(gitlabGeneration.logId);
+    expect((gitlabLog.sourceSnapshot as { repos: { repo: string }[] }).repos.map((repo) => repo.repo)).toEqual(["group/project"]);
+
+    const mixedProject = await createProject(owner, createProjectSchema.parse({
+      name: "Mixed sources", repos: [{ fullName: "o/r" }, { provider: "gitlab", fullName: "group/project" }],
+    }), 5);
+    const mixedGeneration = await startStreamingGeneration({ owner, project: mixedProject, period: { days: 7 } });
+    await mixedGeneration.finish(await collect(mixedGeneration.stream));
+    const mixedLog = await logRow(mixedGeneration.logId);
+    expect((mixedLog.sourceSnapshot as { repos: { repo: string }[] }).repos.map((repo) => repo.repo)).toEqual(["o/r", "group/project"]);
+    expect(gitlabMocks.fetchActivity).toHaveBeenCalledTimes(2);
   });
 
   it("writes with a custom template's instructions and titles the log after it", async () => {

@@ -33,7 +33,11 @@ export default async function DashboardPage({
   const billing = features().billing;
   const lastId = cookieStore.get(PROJECT_COOKIE)?.value;
   const initialProject = projects.find((p) => p.id === lastId) ?? projects[0];
-  const setupMessage = !setup.github ? "Connect GitHub first." : !setup.canGenerate ? "Add an AI API key first." : null;
+  const setupMessage = !setup.github && !setup.gitlab?.connection
+    ? "Connect GitHub or GitLab first."
+    : !setup.canGenerate
+      ? "Add an AI API key first."
+      : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">

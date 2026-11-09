@@ -47,14 +47,15 @@ Managed and own-key usage are counted separately.
 1. authenticates, checks ownership and the rate limit;
 2. resolves AI access (own key, managed key, or mock) and reserves usage;
 3. inserts a `ship_logs` row with status `generating`;
-4. fetches GitHub activity with the current user's connection;
+4. resolves each selected repository's provider and fetches GitHub or GitLab activity with the current user's connection;
 5. streams the model's output to the browser as plain text with an `X-Ship-Log-Id` header;
 6. on completion stores the content and the source snapshot and marks the row `ready`; on failure releases the usage and
    marks it `failed`.
 
 Errors before the first byte are ordinary JSON errors. A failure after streaming has started appends a marker followed
 by the message (see `src/lib/constants.ts`); the browser reader in `src/lib/client-generate.ts` hides it from the text.
-Scheduled runs use the same pipeline without streaming, with the project creator's GitHub connection.
+Scheduled runs use the same pipeline without streaming, with the project creator's provider connections. Repositories
+without an explicit provider continue to use GitHub; GitLab projects may use nested namespace paths.
 
 ## Data model
 
@@ -64,6 +65,8 @@ Scheduled runs use the same pipeline without streaming, with the project creator
 | `usage_counters` | Generations per workspace, month and kind (managed or own key). |
 | `stripe_events` | Processed Stripe event ids, for idempotent webhooks. |
 | `github_connections` | Per-user GitHub login and encrypted token. |
+| `gitlab_instances` | One workspace-scoped GitLab base URL and encrypted OAuth client secret. |
+| `gitlab_connections` | Per-workspace/member GitLab username and encrypted rotating access/refresh tokens. |
 | `ai_credentials` | Per-workspace AI provider, encrypted key, last four characters and model. |
 | `projects` | Repositories, template, tone, audience, schedule and public-changelog flag. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
@@ -75,8 +78,12 @@ Scheduled runs use the same pipeline without streaming, with the project creator
 
 ## Security model
 
-- GitHub tokens, AI keys and webhook URLs are encrypted with AES-256-GCM (`src/lib/crypto.ts`) and never sent to the
-  browser. The settings page only receives the last four characters.
+- GitHub/GitLab tokens, GitLab OAuth client secrets, AI keys and webhook URLs are encrypted with AES-256-GCM
+  (`src/lib/crypto.ts`) and never sent to the browser. OAuth state is signed and bound to the workspace, member and
+  configured instance.
+- GitLab instance URLs must use public HTTPS. The request transport checks resolved addresses at connection time,
+  pins the selected public address for the TLS connection, blocks redirects, enforces timeouts and caps response size.
+  Refresh-token rotation is serialized per member and persisted atomically.
 - Share links carry a random 32-byte token; an optional password is stored as an scrypt hash and unlocks the page
   through a signed, httpOnly cookie. Shared pages are `noindex` and send `Referrer-Policy: no-referrer`.
 - The Stripe webhook verifies the signature and claims each event id once. The cron endpoint compares a hashed bearer

@@ -1,6 +1,6 @@
 # ShipLog
 
-Turn GitHub activity into clean progress reports. ShipLog reads the commits, merged pull requests, closed issues and
+Turn GitHub or GitLab activity into clean progress reports. ShipLog reads the commits, merged pull requests, closed issues and
 releases of your repositories and uses an AI model to write a ship log: a weekly update, changelog, standup, client
 report, release notes or investor update. Logs can be edited, shared, published, exported and delivered to Slack,
 Discord or email, manually or on a schedule.
@@ -8,6 +8,7 @@ Discord or email, manually or on a schedule.
 ## Features
 
 - **Projects** group the repositories behind one ship log, with a template, tone, audience and custom instructions.
+- **GitHub and GitLab** repositories can be mixed in one project; workspace admins configure GitLab OAuth and members connect their own accounts.
 - **Streaming generation** with OpenAI, Anthropic or Grok. Bring your own key, or use managed AI on Pro.
 - **History** per project: search, date range, pinned logs, edit with version history, regenerate in place.
 - **Sharing**: read-only links (optionally password protected, hidden from search engines) and a public changelog.
@@ -45,7 +46,7 @@ Before sending a change, run `npm run typecheck`, `npm run lint`, `npm test` and
 | | |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | Run it locally, first run, demo data. |
-| [Service setup](docs/services.md) | Clerk, Neon, GitHub, Stripe, Resend, OpenAI, cron. |
+| [Service setup](docs/services.md) | Clerk, Neon, GitHub, GitLab, Stripe, Resend, OpenAI, cron. |
 | [Configuration](docs/configuration.md) | Every environment variable, feature flag and limit. |
 | [Architecture](docs/architecture.md) | Code layout, data model, how generation and billing work. |
 | [Customization](docs/customization.md) | Branding, plans, templates, AI providers. |

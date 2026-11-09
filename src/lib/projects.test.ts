@@ -14,8 +14,10 @@ describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () =>
   afterAll(async () => {
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { projects } = await import("@/db/schema");
+    const { gitlabConnections, gitlabInstances, projects } = await import("@/db/schema");
     // Logs and versions cascade from projects.
+    await getDb().delete(gitlabConnections).where(inArray(gitlabConnections.ownerId, [ownerA.ownerId, ownerB.ownerId]));
+    await getDb().delete(gitlabInstances).where(inArray(gitlabInstances.ownerId, [ownerA.ownerId, ownerB.ownerId]));
     await getDb().delete(projects).where(inArray(projects.ownerId, [ownerA.ownerId, ownerB.ownerId]));
   });
 
@@ -57,6 +59,53 @@ describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () =>
     const renamed = await updateProject(ownerB.ownerId, project.id, { name: "Renamed", repos: [{ fullName: "a/b" }] });
     expect(renamed.slug).toBe(project.slug);
     expect(renamed.repos).toEqual([{ fullName: "a/b" }]);
+  });
+
+  it("keeps the same repository path on different providers and legacy entries as GitHub", async () => {
+    const { createProject, getProject, updateProject } = await import("./projects");
+    const { createProjectSchema } = await import("./validation");
+    const project = await createProject(ownerA, createProjectSchema.parse({
+      name: "Mixed repositories",
+      repos: [
+        { fullName: "group/project" },
+        { provider: "gitlab", fullName: "group/subgroup/project" },
+        { provider: "gitlab", fullName: "GROUP/SUBGROUP/PROJECT" },
+      ],
+    }), 5);
+
+    expect(project.repos).toEqual([
+      { fullName: "group/project" },
+      { provider: "gitlab", fullName: "group/subgroup/project" },
+    ]);
+    expect((await getProject(ownerA.ownerId, project.id))?.repos).toEqual(project.repos);
+
+    const updated = await updateProject(ownerA.ownerId, project.id, {
+      repos: [{ provider: "gitlab", fullName: "group/subgroup/other" }, { fullName: "group/other" }],
+    });
+    expect(updated.repos).toEqual([{ provider: "gitlab", fullName: "group/subgroup/other" }, { fullName: "group/other" }]);
+  });
+
+  it("stores workspace GitLab configuration separately from each member connection", async () => {
+    const { getDb } = await import("@/db");
+    const { gitlabConnections, gitlabInstances } = await import("@/db/schema");
+    const instance = { ownerId: ownerA.ownerId, baseUrl: "https://gitlab.example.test", clientId: "client-a", encryptedClientSecret: "ciphertext" };
+    const connection = { ownerId: ownerA.ownerId, userId: ownerA.userId, username: "dev", encryptedAccessToken: "access-cipher", encryptedRefreshToken: "refresh-cipher", scopes: "read_api", expiresAt: new Date("2026-11-06T12:00:00Z") };
+    const db = getDb();
+    await db.insert(gitlabInstances).values(instance);
+    await db.insert(gitlabConnections).values([
+      connection,
+      { ...connection, userId: "test_u_other", username: "other" },
+      { ...connection, ownerId: ownerB.ownerId, userId: ownerB.userId, username: "other workspace" },
+    ]);
+
+    const { eq, and } = await import("drizzle-orm");
+    const instances = await db.select().from(gitlabInstances).where(eq(gitlabInstances.ownerId, ownerA.ownerId));
+    const connections = await db.select().from(gitlabConnections).where(eq(gitlabConnections.ownerId, ownerA.ownerId));
+    expect(instances).toMatchObject([instance]);
+    expect(connections).toHaveLength(2);
+    expect(connections.map((row) => row.userId)).toEqual(expect.arrayContaining([ownerA.userId, "test_u_other"]));
+    const ownConnection = await db.select().from(gitlabConnections).where(and(eq(gitlabConnections.ownerId, ownerA.ownerId), eq(gitlabConnections.userId, ownerA.userId)));
+    expect(ownConnection).toMatchObject([connection]);
   });
 
   it("lists, searches, filters and caps history; versions content edits", async () => {

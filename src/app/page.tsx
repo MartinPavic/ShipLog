@@ -104,6 +104,57 @@ export default function Home() {
           </div>
         </section>
 
+        <section aria-labelledby="sample-reports-title" className="container mx-auto max-w-6xl px-4 py-14 md:py-18">
+          <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
+            <div className="max-w-2xl">
+              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-brass">One source, different audiences</p>
+              <h2 id="sample-reports-title" className="text-2xl font-bold md:text-3xl">
+                A week of work, two useful updates
+              </h2>
+            </div>
+            <p className="text-sm text-muted-foreground">Fictional sample activity</p>
+          </div>
+
+          <div className="mb-5 flex flex-wrap gap-x-5 gap-y-1 border-y py-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Billing Portal</span>
+            <span>Invoice history redesign</span>
+            <span>CSV invoice export</span>
+            <span>Duplicate notification fix</span>
+          </div>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <article className="space-y-4 border-l-2 border-brass/70 py-2 pl-5 pr-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">For clients</p>
+                <h3 className="mt-1 text-xl font-semibold">Client report</h3>
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Billing is easier to manage. Customers can find past invoices, export them for their records, and avoid
+                duplicate payment notices.
+              </p>
+              <ul className="space-y-2 text-sm">
+                <li>• A clearer invoice history makes previous charges easier to review.</li>
+                <li>• CSV exports simplify bookkeeping and reconciliation.</li>
+              </ul>
+            </article>
+
+            <article className="space-y-4 border-l-2 border-teal-700/70 py-2 pl-5 pr-2 dark:border-teal-300/70">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">For your team</p>
+                <h3 className="mt-1 text-xl font-semibold">Weekly update</h3>
+              </div>
+              <ul className="space-y-2 text-sm">
+                <li><strong>Shipped:</strong> redesigned invoice history and added CSV export.</li>
+                <li><strong>Fixed:</strong> duplicate payment notifications.</li>
+              </ul>
+              <p className="text-sm leading-6 text-muted-foreground">
+                A concise internal summary keeps the team aligned on changes without forwarding raw commit messages.
+              </p>
+            </article>
+          </div>
+          <p className="mt-6 text-xs text-muted-foreground">Sample content only. No repository is connected.</p>
+        </section>
+
         <WaveDivider className="text-secondary" />
         <section className="bg-secondary">
           <div className="container mx-auto grid gap-8 px-4 py-10 md:grid-cols-3">
