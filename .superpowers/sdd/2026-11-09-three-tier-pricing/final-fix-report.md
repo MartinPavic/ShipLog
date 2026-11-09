@@ -99,3 +99,68 @@ Final diff inspection covered shared Checkout/webhook locking, event claim check
 - The retained cutoff uses application time, as do existing webhook update timestamps. Keep application/database clocks synchronized. Existing subscription/project limits and paid-feature restrictions are not lifted by retained report visibility.
 
 The complete fix wave and this report are committed together; the delivery response supplies the resulting commit SHA and subject.
+
+## Critical Checkout Race Follow-Up (2026-11-09)
+
+Baseline: `7327f30`, clean worktree on `pricing/three-tier` before this task.
+Implementation commit: `cc4d44499f803158cc523ef6255a873410eb4741` (`Fix checkout completion race with durable session reservations`).
+This section supersedes finding 3's earlier claim that separate complete/open queries close the completion gap. The reviewer correctly reproduced a remaining race in that implementation.
+
+### Scope And Implementation
+
+- Read the approved design, implementation plan, existing final-fix report, and controller's Critical finding/ruling. No subagents were dispatched and no unrelated implementation was changed.
+- Added nullable `billing_accounts.stripe_checkout_session_id`. Every new or adopted pending Checkout session is persisted under the existing workspace checkout advisory lock before that transaction releases its lock.
+- Subsequent requests retrieve that exact ID. Only an open subscription session with exactly the requested configured price and a URL is reused. A variant mismatch must be confirmed expired before replacement. Complete or unknown/nonterminal statuses return `409 BILLING_PORTAL_REQUIRED` without creating another session. An already expired session permits a fresh reservation.
+- If completion wins an attempted expiration, the handler rereads the exact session and returns the portal-directed conflict; expiration/network failures never authorize replacement.
+- Replaced the separate status-filtered session scans with one paginated, unfiltered discovery path for accounts without a pending pointer. Completion cannot move an existing session between filtered queries. A discovered pending ID is committed before retrieval/reuse/expiration, including when completion happens during discovery.
+- Added one nullable JSONB create reservation containing the stable idempotency key, creation timestamp, and exact Stripe create parameters. This reservation commits in its own locked transaction before any Checkout create call. Creation and pointer persistence run in a subsequent locked transaction. A lost Stripe response or rollback after successful creation leaves the committed reservation available for an identical idempotent retry; current status is retrieved after the resulting pointer commits, rather than trusting a cached create response.
+- Unresolved reservations at or beyond 23 hours fail closed without another create call. They require operator reconciliation rather than risking key reuse after Stripe's idempotency retention window. This intentionally trades recovery availability for duplicate-subscription safety; reservations must not be blindly deleted to unblock checkout.
+- Matching `checkout.session.completed` webhook persistence clears the pending session ID atomically with the subscription entitlement. An event carrying a different session ID does not clear it. Existing subscription identity checks and webhook locks remain in place; Checkout itself still grants no entitlement.
+
+### Local Migration And Test Isolation
+
+Generated and applied `drizzle/0010_square_fabian_cortez.sql` plus the generated journal/snapshot. SQL adds only nullable `stripe_checkout_session_id` (text) and `stripe_checkout_reservation` (JSONB); no existing rows or subscription state are rewritten.
+
+Every migration and billing test command used these explicit values:
+
+```sh
+export DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:63028/postgres'
+export DATABASE_URL_UNPOOLED='postgresql://postgres:postgres@127.0.0.1:63028/postgres'
+export ENCRYPTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+export STRIPE_SECRET_KEY='sk_test_dummy'
+export STRIPE_WEBHOOK_SECRET='whsec_test_dummy'
+export STRIPE_PRICE_PRO_BYOK_ID='price_pro_byok_test'
+export STRIPE_PRICE_PRO_MANAGED_ID='price_pro_managed_test'
+export STRIPE_PRICE_ULTRA_BYOK_ID='price_ultra_byok_test'
+export STRIPE_PRICE_ULTRA_MANAGED_ID='price_ultra_managed_test'
+```
+
+Removed the billing suite's `.env.local` loader. Stripe operations were mocked and database transactions/locks used the disposable local PostgreSQL instance only. No Neon/live services, Stripe dashboard/API operations, production migration, deployment, push, or dependency changes were performed.
+
+### Verification Evidence
+
+- **RED before implementation:** the new gated completion regression returned 200 instead of 409 against the actual handler. The selected new cases produced 7 expected failures and 1 pass: the session pointer did not exist, completed/unknown sessions allowed replacement, and webhook pointer assertions failed.
+- **Initial GREEN:** after implementation and the local migration, the same selection passed all 8 cases.
+- **Full billing check:** initially found two obsolete test assumptions: two filtered open lists per concurrent request, and a completed-list fixture conflicting with its still-open exact-session fixture. Updated concurrency coverage to require one create, exact-ID retrieval and identical returned URLs; retained completed-history reconciliation coverage using an existing customer without a pointer and asserted zero new creates. All 104 then-current focused tests passed.
+- **Boundary RED/GREEN:** added bootstrap completion, lost-create-response recovery for open/complete sessions, the 23-hour fail-closed boundary, and completion winning expiration. Four passed immediately; the expiration race initially returned 500 rather than 409. Exact-session rereading corrected that response; all 5 boundary cases then passed.
+- **Final focused command:** `npm test -- src/lib/billing.test.ts src/lib/stripe-prices.test.ts src/lib/webhooks.test.ts`: **3 files passed, 109 tests passed, zero skipped**, exit 0. Billing contributes 85 tests, including 13 added cases. The deterministic completion gate permits only the original session creation and blocks replacement. Recovery cases assert the reservation is already committed when create is called, reuse identical parameters/key, create only one remote mock session, and retrieve its current state before responding.
+- `npm run typecheck`: passed, exit 0.
+- `npm run lint -- --max-warnings=0 src/app/api/stripe/checkout/route.ts src/lib/billing.ts src/lib/billing.test.ts src/db/schema.ts`: passed, exit 0.
+- `git diff --check` and `git diff --cached --check`: passed before commit. Pre-commit secret scan: no secrets found in the 7 staged files.
+- Editor diagnostics: no errors in the four changed TypeScript files.
+
+### Scoped Re-Review And Limits
+
+Reviewed pending-session authority, status/price checks, atomic expiration versus completion, unfiltered bootstrap discovery, durable reservation commits and retries, webhook identity clearing, and additive migration scope. No remaining duplicate-session path was identified in this flow under the workspace lock and Stripe's idempotency/expiration contracts. No further fix wave followed this scoped re-review.
+
+The ambiguous-success tests model the durable state left by a crash/persistence rollback; an actual process kill or database connection-loss injection was not run. No live Stripe payment, browser checkout, full application suite, or production build was repeated for this narrow task. The intentionally stale-reservation 409/reconciliation behavior is an operational limitation, not permission to automatically create a replacement. All application-created sessions use the reservation path; independent session creation outside this application is outside the workspace lock's guarantee.
+
+The final-fix report is tracked from the previous implementation wave despite the `.superpowers/` ignore rule; its last section records the complete-branch review and final verification.
+
+## Final Scoped Re-Review And Verification
+
+- Scoped reviewer re-reviewed `d83a3a0..cc4d444` and approved: no blocking findings remain for the durable checkout reservation fix.
+- After that review, ran the complete suite once more with explicit disposable local DB URLs, the test-only encryption key, dummy Stripe price IDs/secrets, and dummy OpenAI key: **62 files passed, 669 tests passed, zero skipped**.
+- Final `npm run typecheck`, `npm run lint -- --max-warnings=0`, and production `npm run build` all passed with explicit local/test environment values.
+- Final `npm audit --omit=dev --audit-level=high`: 0 vulnerabilities; `npm run licenses -- --check`: 235 production packages compliant; `npm run scan:secrets -- --all`: no secrets in 302 files; `git diff --check` passed.
+- No production migration, Stripe dashboard/API action, deployment, push, or live payment/tax flow was performed. The generated migrations were applied only to local disposable Postgres.
