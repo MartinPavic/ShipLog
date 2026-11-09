@@ -355,4 +355,60 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     const { getUsageMeter } = await import("./usage");
     expect(await getUsageMeter(owner.ownerId)).toEqual({ kind: "byok", used: 5, limit: 5 });
   });
+
+  it("returns NO_AI_KEY for Pro BYOK when no workspace key is saved (no managed fallback)", async () => {
+    stubApis();
+    const { getDb } = await import("@/db");
+    const { aiCredentials, billingAccounts } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { encrypt } = await import("./crypto");
+    const { startStreamingGeneration } = await import("./generation");
+
+    process.env.OPENAI_API_KEY = "sk-managed";
+    await getDb()
+      .insert(billingAccounts)
+      .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "byok", status: "active" })
+      .onConflictDoUpdate({
+        target: billingAccounts.ownerId,
+        set: { plan: "pro", aiMode: "byok", status: "active" },
+      });
+    await getDb().delete(aiCredentials).where(eq(aiCredentials.ownerId, owner.ownerId));
+
+    await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
+      code: "NO_AI_KEY",
+      status: 400,
+    });
+
+    await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
+    await getDb().insert(aiCredentials).values({
+      ownerId: owner.ownerId,
+      provider: "openai",
+      encryptedKey: encrypt("sk-test-key"),
+      last4: "-key",
+    });
+  });
+
+  it("fails clearly when Pro Managed is selected but the server key is unavailable", async () => {
+    stubApis();
+    const { getDb } = await import("@/db");
+    const { billingAccounts } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { startStreamingGeneration } = await import("./generation");
+
+    delete process.env.OPENAI_API_KEY;
+    await getDb()
+      .insert(billingAccounts)
+      .values({ ownerId: owner.ownerId, plan: "pro", aiMode: "managed", status: "active" })
+      .onConflictDoUpdate({
+        target: billingAccounts.ownerId,
+        set: { plan: "pro", aiMode: "managed", status: "active" },
+      });
+
+    await expect(startStreamingGeneration({ owner, project, period: { days: 7 } })).rejects.toMatchObject({
+      code: "MANAGED_AI_UNAVAILABLE",
+      status: 503,
+    });
+
+    await getDb().delete(billingAccounts).where(eq(billingAccounts.ownerId, owner.ownerId));
+  });
 });

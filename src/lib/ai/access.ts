@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/api";
 import { DEFAULT_MODELS, MANAGED_PROVIDER } from "@/lib/ai/models";
 import { isMockAi, managedAiKey } from "@/env";
 import { decrypt } from "@/lib/crypto";
-import { getPlanLimits, type PlanLimits } from "@/lib/plans";
+import { getPlanLimits, type AiMode, type Plan, type PlanLimits } from "@/lib/plans";
 import type { AiProvider } from "@/lib/validation";
 
 export type AiAccess = {
@@ -25,17 +25,28 @@ export async function getAiCredential(ownerId: string) {
   return row ?? null;
 }
 
-// Own key wins; otherwise Pro falls back to the server's managed key.
+export function resolveUsageKind(plan: Plan, aiMode: AiMode | null, limits: PlanLimits): "managed" | "byok" {
+  if (plan === "free") return "byok";
+  if (aiMode === "managed") return "managed";
+  if (aiMode === "byok") return "byok";
+
+  // Legacy/null mode rows: infer from limits so existing workspaces keep consistent behavior.
+  return limits.managedGenerationsPerMonth > 0 && limits.byokGenerationsPerMonth === 0 ? "managed" : "byok";
+}
+
+// The subscription mode is authoritative: BYOK requires a workspace key, Managed requires the server key.
 export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
-  const { limits } = await getPlanLimits(ownerId);
+  const { plan, aiMode, limits } = await getPlanLimits(ownerId);
+  const kind = resolveUsageKind(plan, aiMode, limits);
 
   // Demo mode: nothing leaves the server and no key is needed, but usage is still counted.
   if (isMockAi()) {
-    return { kind: limits.managedAi ? "managed" : "byok", provider: "mock", key: "mock", model: "mock", limits };
+    return { kind, provider: "mock", key: "mock", model: "mock", limits };
   }
 
-  const credential = await getAiCredential(ownerId);
-  if (credential) {
+  if (kind === "byok") {
+    const credential = await getAiCredential(ownerId);
+    if (!credential) throw new ApiError(400, "Add your AI API key in Settings first.", "NO_AI_KEY");
     return {
       kind: "byok",
       provider: credential.provider,
@@ -46,15 +57,19 @@ export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
   }
 
   const managedKey = managedAiKey();
-  if (limits.managedAi && managedKey) {
-    return {
-      kind: "managed",
-      provider: MANAGED_PROVIDER,
-      key: managedKey,
-      model: DEFAULT_MODELS[MANAGED_PROVIDER],
-      limits,
-    };
+  if (!managedKey) {
+    throw new ApiError(
+      503,
+      "Managed AI is unavailable on this deployment. Configure the server AI key or switch this workspace to BYOK mode.",
+      "MANAGED_AI_UNAVAILABLE"
+    );
   }
 
-  throw new ApiError(400, "Add your AI API key in Settings first.", "NO_AI_KEY");
+  return {
+    kind: "managed",
+    provider: MANAGED_PROVIDER,
+    key: managedKey,
+    model: DEFAULT_MODELS[MANAGED_PROVIDER],
+    limits,
+  };
 }

@@ -9,12 +9,17 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
   const ids = {
     freeNone: `test_o_${rand()}`,
     freeKey: `test_o_${rand()}`,
-    proNone: `test_o_${rand()}`,
-    proKey: `test_o_${rand()}`,
+    proByokNone: `test_o_${rand()}`,
+    proByokKey: `test_o_${rand()}`,
+    proManagedNone: `test_o_${rand()}`,
+    proManagedKey: `test_o_${rand()}`,
+    ultraByokKey: `test_o_${rand()}`,
+    ultraManagedKey: `test_o_${rand()}`,
     freeOrg: `org_test_${rand()}`,
     freeOrgKey: `org_test_${rand()}`,
   };
   let savedKey: string | undefined;
+  let savedProvider: string | undefined;
 
   async function setCredential(ownerId: string, provider: "openai" | "anthropic" | "grok", key: string, model: string | null = null) {
     const { getDb } = await import("@/db");
@@ -25,20 +30,30 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
 
   beforeAll(async () => {
     savedKey = process.env.OPENAI_API_KEY;
+    savedProvider = process.env.AI_PROVIDER;
     const { getDb } = await import("@/db");
     const { billingAccounts } = await import("@/db/schema");
     await getDb().insert(billingAccounts).values([
-      { ownerId: ids.proNone, plan: "pro", status: "active" },
-      { ownerId: ids.proKey, plan: "pro", status: "active" },
+      { ownerId: ids.proByokNone, plan: "pro", aiMode: "byok", status: "active" },
+      { ownerId: ids.proByokKey, plan: "pro", aiMode: "byok", status: "active" },
+      { ownerId: ids.proManagedNone, plan: "pro", aiMode: "managed", status: "active" },
+      { ownerId: ids.proManagedKey, plan: "pro", aiMode: "managed", status: "active" },
+      { ownerId: ids.ultraByokKey, plan: "ultra", aiMode: "byok", status: "active" },
+      { ownerId: ids.ultraManagedKey, plan: "ultra", aiMode: "managed", status: "active" },
     ]);
     await setCredential(ids.freeKey, "anthropic", "sk-ant-free-key");
-    await setCredential(ids.proKey, "grok", "xai-own-key", "grok-custom");
+    await setCredential(ids.proByokKey, "grok", "xai-own-key", "grok-custom");
+    await setCredential(ids.proManagedKey, "anthropic", "sk-ant-ignore-me");
+    await setCredential(ids.ultraByokKey, "openai", "sk-ultra-byok");
+    await setCredential(ids.ultraManagedKey, "grok", "xai-ultra-ignore");
     await setCredential(ids.freeOrgKey, "openai", "sk-org-key");
   });
 
   afterAll(async () => {
     if (savedKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = savedKey;
+    if (savedProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = savedProvider;
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts } = await import("@/db/schema");
@@ -50,6 +65,7 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
   const resolve = async (ownerId: string) => (await import("@/lib/ai/access")).resolveAiAccess(ownerId);
 
   it("uses the owner's own key and the provider's default model", async () => {
+    delete process.env.AI_PROVIDER;
     delete process.env.OPENAI_API_KEY;
     const { DEFAULT_MODELS } = await import("@/lib/ai/models");
     const { PLAN_LIMITS } = await import("@/lib/plans");
@@ -62,16 +78,25 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
     });
   });
 
-  it("honours a custom model and prefers the owner's key over the managed one on Pro", async () => {
+  it("uses BYOK for Pro BYOK mode and honours a custom model", async () => {
+    delete process.env.AI_PROVIDER;
     process.env.OPENAI_API_KEY = "sk-managed";
-    const access = await resolve(ids.proKey);
+    const access = await resolve(ids.proByokKey);
     expect(access).toMatchObject({ kind: "byok", provider: "grok", key: "xai-own-key", model: "grok-custom" });
   });
 
-  it("falls back to the managed key on Pro when the owner has none", async () => {
+  it("uses BYOK for Ultra BYOK mode", async () => {
+    delete process.env.AI_PROVIDER;
+    process.env.OPENAI_API_KEY = "sk-managed";
+    const access = await resolve(ids.ultraByokKey);
+    expect(access).toMatchObject({ kind: "byok", provider: "openai", key: "sk-ultra-byok" });
+  });
+
+  it("uses the managed server key on Pro Managed even when a workspace key exists", async () => {
+    delete process.env.AI_PROVIDER;
     process.env.OPENAI_API_KEY = "sk-managed";
     const { DEFAULT_MODELS } = await import("@/lib/ai/models");
-    expect(await resolve(ids.proNone)).toMatchObject({
+    expect(await resolve(ids.proManagedKey)).toMatchObject({
       kind: "managed",
       provider: "openai",
       key: "sk-managed",
@@ -79,18 +104,41 @@ describe.skipIf(!process.env.DATABASE_URL)("resolveAiAccess (database)", () => {
     });
   });
 
-  it("requires a key when nothing is available", async () => {
+  it("uses the managed server key on Ultra Managed even when a workspace key exists", async () => {
+    delete process.env.AI_PROVIDER;
+    process.env.OPENAI_API_KEY = "sk-managed";
+    const access = await resolve(ids.ultraManagedKey);
+    expect(access).toMatchObject({ kind: "managed", provider: "openai", key: "sk-managed" });
+  });
+
+  it("requires a workspace key for paid BYOK mode", async () => {
+    delete process.env.AI_PROVIDER;
+    process.env.OPENAI_API_KEY = "sk-managed";
+    await expect(resolve(ids.proByokNone)).rejects.toMatchObject({ code: "NO_AI_KEY", status: 400 });
+  });
+
+  it("fails clearly when managed mode is selected but the server key is unavailable", async () => {
+    delete process.env.AI_PROVIDER;
     delete process.env.OPENAI_API_KEY;
-    await expect(resolve(ids.proNone)).rejects.toMatchObject({ code: "NO_AI_KEY", status: 400 });
+    await expect(resolve(ids.proManagedNone)).rejects.toMatchObject({ code: "MANAGED_AI_UNAVAILABLE", status: 503 });
   });
 
   it("never offers managed AI on Free, even if the server has a key", async () => {
+    delete process.env.AI_PROVIDER;
     process.env.OPENAI_API_KEY = "sk-managed";
     await expect(resolve(ids.freeNone)).rejects.toMatchObject({ code: "NO_AI_KEY" });
     await expect(resolve(ids.freeOrg)).rejects.toMatchObject({ code: "NO_AI_KEY" });
   });
 
+  it("uses deterministic mock AI while keeping the selected mode semantics", async () => {
+    process.env.AI_PROVIDER = "mock";
+    delete process.env.OPENAI_API_KEY;
+    expect(await resolve(ids.proByokNone)).toMatchObject({ kind: "byok", provider: "mock", key: "mock", model: "mock" });
+    expect(await resolve(ids.proManagedNone)).toMatchObject({ kind: "managed", provider: "mock", key: "mock", model: "mock" });
+  });
+
   it("applies the workspace's limits, so a Free organization gets none", async () => {
+    delete process.env.AI_PROVIDER;
     delete process.env.OPENAI_API_KEY;
     const access = await resolve(ids.freeOrgKey);
     expect(access.kind).toBe("byok");

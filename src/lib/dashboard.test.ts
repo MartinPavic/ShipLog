@@ -134,19 +134,26 @@ describe.skipIf(!process.env.DATABASE_URL)("getDashboardData (database)", () => 
     await saveGithubConnection(owner.userId, { login: "dev", token: "t", scopes: "repo" });
     expect((await data()).onboarding.next?.id).toBe("ai");
 
-    // Pro without a key still needs one unless managed AI is configured on the server.
-    await getDb().insert(billingAccounts).values({ ownerId: owner.ownerId, plan: "pro", status: "active" });
+    // Pro BYOK still needs a workspace key even if the server has a managed key.
+    await getDb().insert(billingAccounts).values({ ownerId: owner.ownerId, plan: "pro", aiMode: "byok", status: "active" });
     expect((await data()).onboarding.next?.id).toBe("ai");
+
+    // Switching the paid mode to managed makes the server key sufficient.
+    const { eq } = await import("drizzle-orm");
+    await getDb()
+      .update(billingAccounts)
+      .set({ aiMode: "managed" })
+      .where(eq(billingAccounts.ownerId, owner.ownerId));
     process.env.OPENAI_API_KEY = "sk-managed";
     const managed = await data();
     expect(managed.onboarding.steps[1].done).toBe(true);
-    expect(managed.usage).toEqual({ kind: "managed", used: 0, limit: 200 });
+    expect(managed.usage).toEqual({ kind: "managed", used: 0, limit: 50 });
     delete process.env.OPENAI_API_KEY;
 
     await getDb().insert(aiCredentials).values({ ownerId: owner.ownerId, provider: "openai", encryptedKey: encrypt("sk"), last4: "x" });
     const withKey = await data();
     expect(withKey.onboarding.next?.id).toBe("project");
-    expect(withKey.usage).toEqual({ kind: "byok", used: 0, limit: null });
+    expect(withKey.usage).toEqual({ kind: "managed", used: 0, limit: 50 });
 
     const project = await createProject(owner, createProjectSchema.parse({ name: "First" }), 5);
     const withProject = await data();
@@ -196,10 +203,17 @@ describe.skipIf(!process.env.DATABASE_URL)("getDashboardData (database)", () => 
 
   it("reflects the usage counter", async () => {
     const { getDb } = await import("@/db");
-    const { usageCounters } = await import("@/db/schema");
+    const { billingAccounts, usageCounters } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
     const { currentPeriod } = await import("./usage");
+
+    await getDb()
+      .update(billingAccounts)
+      .set({ aiMode: "byok" })
+      .where(eq(billingAccounts.ownerId, owner.ownerId));
+
     await getDb().insert(usageCounters).values({ ownerId: owner.ownerId, period: currentPeriod(), kind: "byok", count: 7 });
-    expect((await data()).usage).toEqual({ kind: "byok", used: 7, limit: null });
+    expect((await data()).usage).toEqual({ kind: "byok", used: 7, limit: 50 });
   });
 
   it("never mixes in other accounts' data", async () => {

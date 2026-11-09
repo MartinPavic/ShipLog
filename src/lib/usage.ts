@@ -3,8 +3,7 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { usageCounters, usageReservations } from "@/db/schema";
 import { ApiError } from "@/lib/api";
-import { isMockAi } from "@/env";
-import { getAiCredential } from "@/lib/ai/access";
+import { resolveUsageKind } from "@/lib/ai/access";
 import { getPlanLimits, type PlanLimits } from "@/lib/plans";
 
 export type UsageKind = "managed" | "byok";
@@ -112,23 +111,24 @@ export async function getUsage(ownerId: string): Promise<Record<UsageKind, numbe
 function limitError(kind: UsageKind, limit: number) {
   const message =
     kind === "managed" && limit <= 0
-      ? "Managed AI is a Pro feature. Add your own API key in Settings or upgrade to Pro."
+      ? "Managed AI isn't available for this workspace's current subscription mode."
       : limit <= 0
         ? "Upgrade this workspace to Pro to generate logs."
-        : `Monthly limit reached (${limit} generations). Upgrade to Pro for more.`;
+        : kind === "managed"
+          ? `Monthly managed-AI limit reached (${limit} generations).`
+          : `Monthly BYOK limit reached (${limit} generations).`;
   return new ApiError(403, message, "LIMIT_REACHED");
 }
 
 export type UsageMeter = { kind: UsageKind; used: number; limit: number | null };
 
-// Mirrors resolveAiAccess: an own key counts as BYOK, otherwise Pro uses the managed counter.
+// Mirrors resolveAiAccess: usage is tracked against the subscription-selected mode.
 export async function getUsageMeter(ownerId: string): Promise<UsageMeter> {
-  const [credential, { limits }, usage] = await Promise.all([
-    getAiCredential(ownerId),
+  const [{ plan, aiMode, limits }, usage] = await Promise.all([
     getPlanLimits(ownerId),
     getUsage(ownerId),
   ]);
-  const kind: UsageKind = (credential && !isMockAi()) || !limits.managedAi ? "byok" : "managed";
+  const kind: UsageKind = resolveUsageKind(plan, aiMode, limits);
   const limit = limitFor(kind, limits);
   return { kind, used: usage[kind], limit: Number.isFinite(limit) ? limit : null };
 }
