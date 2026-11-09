@@ -53,3 +53,57 @@ Output:
 ## Commit
 
 Task changes and this report are committed together on branch pricing/three-tier.
+
+---
+
+## Task 3 Review-Fix Round (2026-11-09)
+
+Scope: reviewer Important 1 and Important 2, plus two minor webhook-staleness correctness fixes in the same path.
+
+### RED Evidence
+
+Command:
+
+`DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:63028/postgres' DATABASE_URL_UNPOOLED='postgresql://postgres:postgres@127.0.0.1:63028/postgres' ENCRYPTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' STRIPE_PRICE_PRO_BYOK_ID='price_pro_byok_test' STRIPE_PRICE_PRO_MANAGED_ID='price_pro_managed_test' STRIPE_PRICE_ULTRA_BYOK_ID='price_ultra_byok_test' STRIPE_PRICE_ULTRA_MANAGED_ID='price_ultra_managed_test' STRIPE_PRICE_ID='price_legacy_single_test' npm test -- src/lib/billing.test.ts`
+
+Failing tests before implementation:
+
+- `authorizes before body validation and price resolution` (got `400`, expected `403`)
+- `blocks owners with an existing non-terminal past_due|unpaid|paused|incomplete subscription...` (got `200`, expected `409`)
+- `does not demote from a stale payment_failed event when Stripe shows the subscription is recovered`
+- `does not let stale checkout completion overwrite an existing live subscription id`
+
+Initial RED run summary:
+
+- Test Files: `1 failed`
+- Tests: `7 failed`, `46 passed`
+
+### GREEN Evidence
+
+Focused tests command:
+
+`DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:63028/postgres' DATABASE_URL_UNPOOLED='postgresql://postgres:postgres@127.0.0.1:63028/postgres' ENCRYPTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' STRIPE_PRICE_PRO_BYOK_ID='price_pro_byok_test' STRIPE_PRICE_PRO_MANAGED_ID='price_pro_managed_test' STRIPE_PRICE_ULTRA_BYOK_ID='price_ultra_byok_test' STRIPE_PRICE_ULTRA_MANAGED_ID='price_ultra_managed_test' STRIPE_PRICE_ID='price_legacy_single_test' npm test -- src/lib/billing.test.ts`
+
+Output:
+
+- Test Files: `1 passed`
+- Tests: `53 passed`
+
+Typecheck command:
+
+`DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:63028/postgres' DATABASE_URL_UNPOOLED='postgresql://postgres:postgres@127.0.0.1:63028/postgres' ENCRYPTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' STRIPE_PRICE_PRO_BYOK_ID='price_pro_byok_test' STRIPE_PRICE_PRO_MANAGED_ID='price_pro_managed_test' STRIPE_PRICE_ULTRA_BYOK_ID='price_ultra_byok_test' STRIPE_PRICE_ULTRA_MANAGED_ID='price_ultra_managed_test' STRIPE_PRICE_ID='price_legacy_single_test' npm run typecheck`
+
+Output:
+
+- `tsc --noEmit` passed
+
+### Fixes Applied
+
+- Checkout route now authorizes via `requireAdmin()` before request body parsing and Stripe price resolution.
+- Checkout route now blocks second checkout when a workspace already has a non-terminal existing subscription identity (`stripeSubscriptionId` present and status not `canceled`/`incomplete_expired`), while preserving active/trialing block behavior.
+- `checkout.session.completed` processing now protects an existing live subscription id from stale checkout-completion events for a different, older subscription.
+- `invoice.payment_failed` now fetches the current Stripe subscription snapshot before applying account state, preventing stale failures from demoting already-recovered subscriptions.
+
+### Fix Commit
+
+- Code/test fix commit SHA: `0735d4c`
