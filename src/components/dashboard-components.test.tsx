@@ -17,7 +17,8 @@ describe("OnboardingChecklist", () => {
     expect(html).toContain("(done)");
     // Only the next step gets a button; its description is shown, completed ones are struck through.
     expect(html.match(/href="\/dashboard\/settings"/g)).toHaveLength(1);
-    expect(html).toContain("Use your own OpenAI, Anthropic or Grok key");
+    expect(html).toContain("Free and BYOK subscriptions require your own OpenAI, Anthropic or Grok key");
+    expect(html).toContain("A Managed AI subscription uses the server key");
     expect(html).toContain("line-through");
     expect(html).not.toContain("Let ShipLog read the commits");
   });

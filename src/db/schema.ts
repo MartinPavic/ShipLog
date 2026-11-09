@@ -37,6 +37,7 @@ export const billingAccounts = pgTable("billing_accounts", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   status: text("status"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  historyRetainedThrough: timestamp("history_retained_through", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

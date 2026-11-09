@@ -34,39 +34,24 @@ export function resolveUsageKind(plan: Plan, aiMode: AiMode | null, limits: Plan
   return limits.managedGenerationsPerMonth > 0 && limits.byokGenerationsPerMonth === 0 ? "managed" : "byok";
 }
 
+export function resolveSourceKind(plan: Plan, aiMode: AiMode | null, limits: PlanLimits, hasCredential: boolean): "managed" | "byok" {
+  if (!features().billing) {
+    if (hasCredential) return "byok";
+    if (managedAiKey()) return "managed";
+  }
+  return resolveUsageKind(plan, aiMode, limits);
+}
+
 // The subscription mode is authoritative: BYOK requires a workspace key, Managed requires the server key.
 export async function resolveAiAccess(ownerId: string): Promise<AiAccess> {
   const { plan, aiMode, limits } = await getPlanLimits(ownerId);
-  const billingEnabled = features().billing;
-  const kind = resolveUsageKind(plan, aiMode, limits);
   const credential = await getAiCredential(ownerId);
+  const kind = resolveSourceKind(plan, aiMode, limits, Boolean(credential));
   const managedKey = managedAiKey();
 
   // Demo mode: nothing leaves the server and no key is needed, but usage is still counted.
   if (isMockAi()) {
     return { kind, provider: "mock", key: "mock", model: "mock", limits };
-  }
-
-  // Billing-off mode is permissive: keep existing workspace BYOK if present, otherwise use server-managed AI.
-  if (!billingEnabled) {
-    if (credential) {
-      return {
-        kind: "byok",
-        provider: credential.provider,
-        key: decrypt(credential.encryptedKey),
-        model: credential.model ?? DEFAULT_MODELS[credential.provider],
-        limits,
-      };
-    }
-    if (managedKey) {
-      return {
-        kind: "managed",
-        provider: MANAGED_PROVIDER,
-        key: managedKey,
-        model: DEFAULT_MODELS[MANAGED_PROVIDER],
-        limits,
-      };
-    }
   }
 
   if (kind === "byok") {

@@ -35,7 +35,7 @@ plan lacks. They are read at runtime, so changing one needs a restart, not a reb
 | Flag | When off |
 | --- | --- |
 | `BILLING_ENABLED` | No paywall: every workspace gets paid features without plan caps. Stripe routes return 404, billing UI and the pricing section are hidden, and no Stripe variables are required. |
-| `MANAGED_AI_ENABLED` | The server's `OPENAI_API_KEY` is never used; everyone brings their own key. |
+| `MANAGED_AI_ENABLED` | The server's `OPENAI_API_KEY` is never used. Free/BYOK subscriptions still use workspace keys; Managed AI subscriptions cannot generate until managed AI is restored or the subscription changes to BYOK. Billing-off workspaces need their own key. |
 | `TEAMS_ENABLED` | Everyone works in a personal workspace and the organization switcher is hidden. |
 | `SCHEDULING_ENABLED` | No scheduled logs. The cron endpoint reports that it skipped, and `CRON_SECRET` is not required. |
 | `DELIVERY_ENABLED` | Slack, Discord and email channels and "send now" are unavailable. |
@@ -58,6 +58,11 @@ Defined in [`src/lib/plans.ts`](../src/lib/plans.ts) and enforced on the server.
 | Visible logs per project | 10 newest | All | All |
 | Scheduling, delivery, PDF export, teams | No | Yes | Yes |
 | Share links and public changelog | Yes | Yes | Yes |
+
+Downgrades never delete or hide existing projects or reports. A paid-to-Free transition saves a retained-history
+cutoff: reports at or before that cutoff stay visible, alongside the 10 newest reports per project. Later Free reports
+can age out of that window. Never-paid Free workspaces retain only the 10 newest reports. Replayed Free events do not
+advance the cutoff; new project creation and generation still obey the current plan limits.
 
 A Free **organization** can see its data but cannot create projects or generate until it is upgraded. Billing is flat
 per workspace, not per member. With `BILLING_ENABLED=false`, everyone gets paid features without plan caps.

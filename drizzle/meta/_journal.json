@@ -64,6 +64,13 @@
       "when": 1794223922011,
       "tag": "0008_polite_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794228878688,
+      "tag": "0009_past_black_queen",
+      "breakpoints": true
     }
   ]
 }

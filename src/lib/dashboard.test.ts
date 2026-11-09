@@ -56,6 +56,14 @@ describe("buildOnboarding", () => {
     // Steps are independent: a log can exist before GitHub is reconnected.
     expect(buildOnboarding({ github: false, ai: true, firstProjectId: "abc", hasLog: true }).next?.id).toBe("github");
   });
+
+  it("describes AI setup without implying every Pro subscription includes managed AI", () => {
+    const aiStep = buildOnboarding(none).steps[1];
+    expect(aiStep.title).toBe("Set up AI");
+    expect(aiStep.description).toContain("BYOK");
+    expect(aiStep.description).toContain("Managed AI subscription");
+    expect(aiStep.description).not.toContain("Pro includes managed AI");
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)("getDashboardData (database)", () => {

@@ -99,9 +99,11 @@ Variables: `RESEND_API_KEY`, `RESEND_FROM`.
 
 ## OpenAI for managed AI (optional)
 
-On paid managed plans, workspaces without their own key use the server's OpenAI key (50 generations on Pro Managed AI,
-200 on Ultra Managed AI by default).
-Set `MANAGED_AI_ENABLED=false` to never use it. Free workspaces always bring their own key.
+Pro Managed AI and Ultra Managed AI always use the server's OpenAI key, ignoring any saved workspace key (50 generations
+on Pro Managed AI and 200 on Ultra Managed AI by default). Free and paid BYOK subscriptions require a workspace key.
+Set `MANAGED_AI_ENABLED=false` to never use the server key. Managed AI subscriptions then cannot generate: restore the
+server configuration or change the subscription to BYOK in the billing portal. There is no automatic fallback.
+With billing disabled, workspaces prefer a saved workspace key, otherwise use available server-managed AI.
 
 Variable: `OPENAI_API_KEY`.
 

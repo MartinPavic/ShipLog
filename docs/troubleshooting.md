@@ -25,8 +25,12 @@ redirect URI is exactly `<NEXT_PUBLIC_APP_URL>/api/gitlab/callback` with the `re
 self-managed instance must be publicly reachable over HTTPS; private and local hosts are deliberately rejected.
 
 **"Add your AI API key in Settings first."**
-The workspace has no key and managed AI is not available to it (Free plan, `MANAGED_AI_ENABLED=false`, or no
-`OPENAI_API_KEY`). Add a key in Settings, or set `AI_PROVIDER=mock` for placeholder output.
+Free and BYOK subscriptions require a workspace key, regardless of server-managed AI availability. Add a key in Settings,
+or set `AI_PROVIDER=mock` for placeholder output.
+
+**"Managed AI is unavailable".**
+The subscription is locked to Managed AI, but `MANAGED_AI_ENABLED=false` or `OPENAI_API_KEY` is missing. Restore managed
+AI configuration or change the subscription to BYOK through billing management. A saved workspace key is not a fallback.
 
 **A Free workspace can't create a second project.**
 That is the plan limit. The demo project from `npm run seed` counts too: remove it with `npm run seed -- --remove`.

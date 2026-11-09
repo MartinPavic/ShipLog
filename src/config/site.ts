@@ -43,7 +43,7 @@ export const siteConfig = {
     },
     {
       title: "AI writes the report",
-      body: "Choose a template, tone and audience. Use your own OpenAI, Anthropic or Grok key, or the included managed AI on Pro.",
+      body: "Choose a template, tone and audience. Free and BYOK subscriptions use your own OpenAI, Anthropic or Grok key. Pro Managed AI and Ultra Managed AI use the server key.",
     },
     {
       title: "Share and deliver",
@@ -57,7 +57,7 @@ export const siteConfig = {
     },
     {
       q: "Which AI providers can I use?",
-      a: "OpenAI, Anthropic and Grok with your own API key. Pro workspaces can also use the managed AI that is included in the plan.",
+      a: "OpenAI, Anthropic and Grok on Free and BYOK subscriptions with your own API key. Pro Managed AI and Ultra Managed AI use the server's OpenAI key, even if you have a saved key. Change AI mode through subscription management.",
     },
     {
       q: "Can my team use it together?",
@@ -65,7 +65,7 @@ export const siteConfig = {
     },
     {
       q: "Can I cancel any time?",
-      a: "Yes. Manage or cancel your subscription from Settings. Your projects and logs are kept, and the Free plan limits apply afterwards.",
+      a: "Yes. Manage or cancel your subscription from Settings. Existing projects and reports remain visible. Free limits apply to new projects, generations and later report history.",
     },
   ],
 };

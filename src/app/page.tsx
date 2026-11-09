@@ -129,7 +129,11 @@ export default function Home() {
               <div key={feature.title} className="ledger space-y-2 rounded-md bg-card p-6">
                 <p className="text-xs font-medium uppercase tracking-widest text-brass">Day {i + 1}</p>
                 <h2 className="text-lg font-semibold">{feature.title}</h2>
-                <p className="text-sm text-muted-foreground">{feature.body}</p>
+                <p className="text-sm text-muted-foreground">
+                  {!on.managedAi && feature.title === "AI writes the report"
+                    ? "Choose a template, tone and audience. Use your own OpenAI, Anthropic or Grok key."
+                    : feature.body}
+                </p>
               </div>
             ))}
           </div>
@@ -144,7 +148,11 @@ export default function Home() {
             {siteConfig.faq.map((item) => (
               <details key={item.q} className="group p-4">
                 <summary className="cursor-pointer font-medium">{item.q}</summary>
-                <p className="mt-2 text-sm text-muted-foreground">{item.a}</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {!on.managedAi && item.q === "Which AI providers can I use?"
+                    ? "OpenAI, Anthropic and Grok with your own API key on Free and BYOK subscriptions."
+                    : item.a}
+                </p>
               </details>
             ))}
           </div>

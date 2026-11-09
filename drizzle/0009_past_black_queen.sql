@@ -1,0 +1,1 @@
+ALTER TABLE "billing_accounts" ADD COLUMN "history_retained_through" timestamp with time zone;

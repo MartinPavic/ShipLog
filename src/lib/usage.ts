@@ -3,7 +3,8 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { usageCounters, usageReservations } from "@/db/schema";
 import { ApiError } from "@/lib/api";
-import { resolveUsageKind } from "@/lib/ai/access";
+import { getAiCredential, resolveSourceKind } from "@/lib/ai/access";
+import { features } from "@/env";
 import { getPlanLimits, type PlanLimits } from "@/lib/plans";
 
 export type UsageKind = "managed" | "byok";
@@ -128,7 +129,8 @@ export async function getUsageMeter(ownerId: string): Promise<UsageMeter> {
     getPlanLimits(ownerId),
     getUsage(ownerId),
   ]);
-  const kind: UsageKind = resolveUsageKind(plan, aiMode, limits);
+  const credential = features().billing ? null : await getAiCredential(ownerId);
+  const kind: UsageKind = resolveSourceKind(plan, aiMode, limits, Boolean(credential));
   const limit = limitFor(kind, limits);
   return { kind, used: usage[kind], limit: Number.isFinite(limit) ? limit : null };
 }

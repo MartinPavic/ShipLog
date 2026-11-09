@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type Stripe from "stripe";
 import { getDb } from "@/db";
@@ -31,7 +31,7 @@ function entitlementFromSubscription(sub: Stripe.Subscription): { plan: "free" |
     .map((priceId) => entitlementForStripePrice(priceId))
     .filter((entitlement): entitlement is NonNullable<ReturnType<typeof entitlementForStripePrice>> => entitlement !== null);
 
-  if (recognized.length !== 1) {
+  if (sub.items.data.length !== 1 || recurringPrices.length !== 1 || recognized.length !== 1 || sub.items.has_more) {
     return { plan: "free", aiMode: null };
   }
 
@@ -43,31 +43,32 @@ async function retrieveCurrentSubscription(subscriptionId: string): Promise<Stri
 }
 
 export async function processStripeEvent(event: Stripe.Event, claimToken: string): Promise<boolean> {
-  let subscription: Stripe.Subscription | undefined;
-  let checkoutOwnerId: string | undefined;
-  let failedInvoice: { customerId: string; subscriptionId: string } | undefined;
+  let subscriptionId: string | null = null;
+  let customerId: string | null = null;
+  let metadataOwnerId: string | undefined;
 
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
-      checkoutOwnerId = session.metadata?.ownerId;
-      const subscriptionId = idOf(session.subscription);
-      if (session.mode !== "subscription" || !checkoutOwnerId || !subscriptionId) break;
-      subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      if (session.mode !== "subscription" || !session.metadata?.ownerId) break;
+      metadataOwnerId = session.metadata.ownerId;
+      subscriptionId = idOf(session.subscription);
+      customerId = idOf(session.customer);
       break;
     }
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       const sub = event.data.object;
-      subscription = await retrieveCurrentSubscription(sub.id);
+      subscriptionId = sub.id;
+      customerId = idOf(sub.customer);
+      metadataOwnerId = sub.metadata?.ownerId;
       break;
     }
     case "invoice.payment_failed": {
       const invoice = event.data.object;
-      const customerId = idOf(invoice.customer);
+      customerId = idOf(invoice.customer);
       const legacySubscriptionId = idOf((invoice as Stripe.Invoice & { subscription?: string | Stripe.Subscription }).subscription);
-      const subscriptionId = idOf(invoice.parent?.subscription_details?.subscription) ?? legacySubscriptionId;
-      if (customerId && subscriptionId) failedInvoice = { customerId, subscriptionId };
+      subscriptionId = idOf(invoice.parent?.subscription_details?.subscription) ?? legacySubscriptionId;
       break;
     }
   }
@@ -80,6 +81,21 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
       .for("update");
     if (claim?.status !== "processing" || claim.claimToken !== claimToken) return false;
 
+    if (!subscriptionId) return true;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"subscription:" + subscriptionId}))`);
+    const [attributedAccount] = customerId
+      ? await tx.select().from(billingAccounts).where(eq(billingAccounts.stripeCustomerId, customerId)).limit(1)
+      : [];
+    const ownerId = attributedAccount?.ownerId ?? metadataOwnerId;
+    if (!ownerId) return true;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"checkout:" + ownerId}))`);
+    const [account] = await tx.select().from(billingAccounts).where(eq(billingAccounts.ownerId, ownerId)).limit(1).for("update");
+    const differentSubscription = !!account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscriptionId;
+    const canReplace = event.type === "checkout.session.completed" && isTerminalSubscriptionStatus(account?.status);
+    if (differentSubscription && !canReplace) return true;
+    if (event.type === "invoice.payment_failed" && (!account || account.stripeSubscriptionId !== subscriptionId || account.stripeCustomerId !== customerId)) return true;
+    const subscription = await retrieveCurrentSubscription(subscriptionId);
+
     const saveSubscription = async (ownerId: string, sub: Stripe.Subscription) => {
       const periodEnd = sub.items.data[0]?.current_period_end;
       const { plan, aiMode } = entitlementFromSubscription(sub);
@@ -90,43 +106,15 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
         stripeSubscriptionId: sub.id,
         status: sub.status,
         currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
+        ...(plan === "free" && account && account.plan !== "free"
+          ? { historyRetainedThrough: new Date(Math.max(Date.now(), account.historyRetainedThrough?.getTime() ?? 0)) }
+          : {}),
         updatedAt: new Date(),
       };
       await tx.insert(billingAccounts).values({ ownerId, ...values }).onConflictDoUpdate({ target: billingAccounts.ownerId, set: values });
     };
 
-    if (checkoutOwnerId && subscription) {
-      const [account] = await tx
-        .select({ stripeSubscriptionId: billingAccounts.stripeSubscriptionId, status: billingAccounts.status })
-        .from(billingAccounts)
-        .where(eq(billingAccounts.ownerId, checkoutOwnerId))
-        .limit(1);
-      const hasDifferentLiveSubscription =
-        !!account?.stripeSubscriptionId &&
-        account.stripeSubscriptionId !== subscription.id &&
-        !isTerminalSubscriptionStatus(account.status);
-      if (!hasDifferentLiveSubscription) {
-        await saveSubscription(checkoutOwnerId, subscription);
-      }
-    } else if (subscription) {
-      const customerId = idOf(subscription.customer);
-      const [account] = customerId
-        ? await tx.select().from(billingAccounts).where(eq(billingAccounts.stripeCustomerId, customerId)).limit(1)
-        : [];
-      const ownerId = account?.ownerId ?? subscription.metadata?.ownerId;
-      if (ownerId && (!account?.stripeSubscriptionId || account.stripeSubscriptionId === subscription.id)) {
-        await saveSubscription(ownerId, subscription);
-      }
-    } else if (failedInvoice) {
-      const [account] = await tx
-        .select({ ownerId: billingAccounts.ownerId })
-        .from(billingAccounts)
-        .where(and(eq(billingAccounts.stripeCustomerId, failedInvoice.customerId), eq(billingAccounts.stripeSubscriptionId, failedInvoice.subscriptionId)))
-        .limit(1);
-      if (!account) return true;
-      const currentSubscription = await retrieveCurrentSubscription(failedInvoice.subscriptionId);
-      await saveSubscription(account.ownerId, currentSubscription);
-    }
+    await saveSubscription(ownerId, subscription);
     return true;
   });
 }

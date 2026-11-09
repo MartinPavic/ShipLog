@@ -119,7 +119,8 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     else process.env.STRIPE_WEBHOOK_SECRET = savedSecret;
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { billingAccounts, stripeEvents } = await import("@/db/schema");
+    const { billingAccounts, projects, stripeEvents } = await import("@/db/schema");
+    await getDb().delete(projects).where(inArray(projects.ownerId, createdOwners));
     await getDb().delete(billingAccounts).where(inArray(billingAccounts.ownerId, createdOwners));
     await getDb().delete(stripeEvents).where(inArray(stripeEvents.id, createdEvents));
   });
@@ -185,6 +186,10 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       ["legacy single-price", [recurringItem(PRICE_IDS.legacy)]],
       ["missing recurring price", [{ current_period_end: 1_900_000_000, price: null }]],
       ["multiple recognized prices", [recurringItem(PRICE_IDS.proByok), recurringItem(PRICE_IDS.ultraManaged)]],
+      ["recognized plus unknown recurring price", [recurringItem(PRICE_IDS.proByok), recurringItem("price_unknown")]],
+      ["recognized plus legacy recurring price", [recurringItem(PRICE_IDS.proByok), recurringItem(PRICE_IDS.legacy)]],
+      ["recognized plus missing price", [recurringItem(PRICE_IDS.proByok), { price: null }]],
+      ["recognized plus one-time price", [recurringItem(PRICE_IDS.proByok), { price: { id: "price_addon", type: "one_time" } }]],
     ] as const)("stores free/null for %s entitlements", async (_label, items) => {
       const owner = newOwner();
       const sub = subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId }, items: { data: items } });
@@ -213,6 +218,14 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       await deliver(event("customer.subscription.updated", sub));
       expect(retrieve).toHaveBeenCalledTimes(2);
       expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "managed" });
+    });
+
+    it("rejects a truncated subscription item snapshot", async () => {
+      const owner = newOwner();
+      const sub = subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proByok)], has_more: true } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+      expect((await deliver(event("customer.subscription.updated", sub))).status).toBe(200);
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null });
     });
 
     it("walks through cancel, failed payment and reactivation", async () => {
@@ -328,6 +341,49 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "managed", stripeSubscriptionId: currentSub.id });
     });
 
+    it.each(["customer.subscription.updated", "customer.subscription.deleted", "checkout.session.completed", "invoice.payment_failed"])(
+      "serializes distinct %s events across Stripe retrieval and persistence",
+      async (secondType) => {
+        const owner = newOwner();
+        const customer = customerId();
+        const oldSub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proByok)] } });
+        const newSub = { ...oldSub, items: { data: [recurringItem(PRICE_IDS.ultraManaged)] } };
+        await seedAccount(owner.ownerId, { stripeCustomerId: customer, stripeSubscriptionId: oldSub.id, status: "active", plan: "pro", aiMode: "byok" });
+        let releaseFirst!: () => void;
+        let enteredFirst!: () => void;
+        const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+        const entered = new Promise<void>((resolve) => { enteredFirst = resolve; });
+        const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+          .mockImplementationOnce((async () => { enteredFirst(); await gate; return oldSub; }) as never)
+          .mockResolvedValue(newSub as never);
+        const first = deliver(event("customer.subscription.updated", oldSub));
+        await entered;
+        const secondObject = secondType === "checkout.session.completed"
+          ? { mode: "subscription", customer, subscription: oldSub.id, metadata: { ownerId: owner.ownerId } }
+          : secondType === "invoice.payment_failed"
+            ? { customer, parent: { subscription_details: { subscription: oldSub.id } } }
+            : newSub;
+        const second = deliver(event(secondType, secondObject));
+        const { getDb } = await import("@/db");
+        const { sql } = await import("drizzle-orm");
+        let overlappingRetrievals: number;
+        try {
+          await vi.waitFor(async () => {
+            const waiting = await getDb().execute(sql`select 1 from pg_locks where locktype = 'advisory' and not granted and objid in (hashtext(${"checkout:" + owner.ownerId})::oid, hashtext(${"subscription:" + oldSub.id})::oid)`);
+            expect(retrieve.mock.calls.length > 1 || waiting.rows.length > 0).toBe(true);
+          });
+          overlappingRetrievals = retrieve.mock.calls.length;
+        } finally {
+          releaseFirst();
+          await Promise.all([first, second]);
+        }
+        const responses = await Promise.all([first, second]);
+        expect(responses.map((response) => response.status)).toEqual([200, 200]);
+        expect(overlappingRetrievals).toBe(1);
+        expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "managed", stripeSubscriptionId: oldSub.id });
+      }
+    );
+
     it("ignores events it cannot attribute to anyone", async () => {
       const unknown = customerId();
       const sub = subscription({ customer: unknown });
@@ -340,12 +396,86 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       expect(await getDb().select().from(billingAccounts).where(eq(billingAccounts.stripeCustomerId, unknown))).toHaveLength(0);
     });
 
+    it.each([true, false])("preserves pre-downgrade reports without lifting never-paid Free history (paid=%s)", async (paid) => {
+      current = newOwner();
+      const owner = current;
+      const sub = subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId } });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+      if (paid) expect((await deliver(event("customer.subscription.updated", sub))).status).toBe(200);
+      const { getDb } = await import("@/db");
+      const { shipLogs } = await import("@/db/schema");
+      const { createProject } = await import("./projects");
+      const { createProjectSchema } = await import("./validation");
+      const { getPlanLimits } = await import("./plans");
+      const project = await createProject(owner, createProjectSchema.parse({ name: "Retained history" }), (await getPlanLimits(owner.ownerId)).limits.maxProjects);
+      const rows = Array.from({ length: 12 }, (_, index) => ({
+        projectId: project.id, ownerId: owner.ownerId, createdBy: owner.userId,
+        title: `Report ${index}`, content: `Body ${index}`, template: "weekly_update", status: "ready" as const,
+        periodStart: new Date(), periodEnd: new Date(), createdAt: new Date(Date.now() - (20 - index) * 1000),
+      }));
+      const logs = await getDb().insert(shipLogs).values(rows).returning();
+      if (paid) {
+        retrieve.mockResolvedValue({ ...sub, status: "canceled" } as never);
+        expect((await deliver(event("customer.subscription.deleted", sub))).status).toBe(200);
+      }
+      expect((await getPlanLimits(owner.ownerId)).limits.visibleLogs).toBe(10);
+      const list = (await import("@/app/api/projects/[id]/logs/route")).GET;
+      const open = (await import("@/app/api/logs/[id]/route")).GET;
+      const listed = await list(new Request("http://x/logs?pageSize=50"), { params: Promise.resolve({ id: project.id }) });
+      expect(listed.status).toBe(200);
+      expect(await listed.json()).toMatchObject({ total: paid ? 12 : 10, hidden: paid ? 0 : 2 });
+      for (const [index, log] of logs.entries()) {
+        const response = await open(new Request("http://x/log"), { params: Promise.resolve({ id: log.id }) });
+        expect(response.status).toBe(paid || index >= 2 ? 200 : 403);
+      }
+      if (paid) {
+        const later = await getDb().insert(shipLogs).values(rows.map((row, index) => ({ ...row, createdAt: new Date(Date.now() + (index + 1) * 1000) }))).returning();
+        await deliver(event("customer.subscription.deleted", sub));
+        const after = await list(new Request("http://x/logs?pageSize=50"), { params: Promise.resolve({ id: project.id }) });
+        expect(await after.json()).toMatchObject({ total: 22, hidden: 2 });
+        expect((await open(new Request("http://x/log"), { params: Promise.resolve({ id: logs[0].id }) })).status).toBe(200);
+        expect((await open(new Request("http://x/log"), { params: Promise.resolve({ id: later[0].id }) })).status).toBe(403);
+      }
+    });
+
     it("acknowledges event types it does not handle", async () => {
       expect((await deliver(event("charge.succeeded", { id: "ch_1" }))).status).toBe(200);
     });
   });
 
   describe("webhook: checkout.session.completed", () => {
+    it("rechecks current subscription identity when another subscription replaces it under the workspace lock", async () => {
+      const owner = newOwner();
+      const customer = customerId();
+      const oldSub = subscription({ customer, status: "canceled", metadata: { ownerId: owner.ownerId } });
+      const replacement = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.ultraByok)] } });
+      await seedAccount(owner.ownerId, { stripeCustomerId: customer, stripeSubscriptionId: oldSub.id, status: "canceled" });
+      let release!: () => void;
+      let entered!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const started = new Promise<void>((resolve) => { entered = resolve; });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockImplementation((async (id: string) => {
+        if (id === replacement.id) { entered(); await gate; return replacement; }
+        return oldSub;
+      }) as never);
+      const replacing = deliver(event("checkout.session.completed", { mode: "subscription", customer, subscription: replacement.id, metadata: { ownerId: owner.ownerId } }));
+      await started;
+      const stale = deliver(event("customer.subscription.updated", oldSub));
+      const { getDb } = await import("@/db");
+      const { sql } = await import("drizzle-orm");
+      try {
+        await vi.waitFor(async () => {
+          const waiting = await getDb().execute(sql`select 1 from pg_locks where locktype = 'advisory' and not granted and objid = hashtext(${"checkout:" + owner.ownerId})::oid`);
+          expect(waiting.rows.length).toBeGreaterThan(0);
+        });
+      } finally {
+        release();
+        await Promise.all([replacing, stale]);
+      }
+      expect(retrieve).toHaveBeenCalledOnce();
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "byok", stripeSubscriptionId: replacement.id });
+    });
+
     it("fetches the subscription and applies it", async () => {
       const owner = newOwner();
       const customer = customerId();
@@ -555,9 +685,11 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
           openSessions.push(session);
           return session;
         }) as never),
-        openSessions: vi.spyOn(stripe.checkout.sessions, "list").mockImplementation((async () => ({
-          data: [...openSessions],
+        openSessions: vi.spyOn(stripe.checkout.sessions, "list").mockImplementation((async (args: { status: string }) => ({
+          data: args.status === "open" ? [...openSessions] : [],
         })) as never),
+        subscriptions: vi.spyOn(stripe.subscriptions, "list").mockResolvedValue({ data: [] } as never),
+        retrieveSubscription: vi.spyOn(stripe.subscriptions, "retrieve").mockResolvedValue({ status: "canceled" } as never),
         expire: vi.spyOn(stripe.checkout.sessions, "expire").mockResolvedValue({ id: "cs_old" } as never),
         portal: vi.spyOn(stripe.billingPortal.sessions, "create").mockResolvedValue({ url: "https://portal.test/p" } as never),
       };
@@ -591,6 +723,8 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
         mode: "subscription",
         line_items: [{ price: expectedPrice, quantity: 1 }],
         automatic_tax: { enabled: true },
+        billing_address_collection: "required",
+        customer_update: { address: "auto" },
       });
     });
 
@@ -655,19 +789,52 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
       expect(responses.map((response) => response.status)).toEqual([200, 200]);
       expect(s.sessions).toHaveBeenCalledOnce();
-      expect(s.openSessions).toHaveBeenCalledTimes(2);
+      expect(s.openSessions.mock.calls.filter(([args]) => args?.status === "open")).toHaveLength(2);
       expect(s.customers).toHaveBeenCalledOnce();
     });
 
     it("expires an open session with an old configured price", async () => {
       current = newOwner();
       const s = await spies();
-      s.openSessions.mockResolvedValueOnce({
-        data: [{ id: "cs_old", url: "https://checkout.test/old", mode: "subscription", line_items: { data: [{ price: { id: "price_old" } }] } }],
-      } as never);
+      s.openSessions.mockImplementation((async (args: { status: string }) => ({
+        data: args.status === "open" ? [{ id: "cs_old", url: "https://checkout.test/old", mode: "subscription", line_items: { data: [{ price: { id: "price_old" } }] } }] : [],
+      })) as never);
 
       expect((await checkout({ tier: "pro", aiMode: "managed" })).status).toBe(200);
       expect(s.expire).toHaveBeenCalledWith("cs_old");
+      expect(s.sessions).toHaveBeenCalledOnce();
+    });
+
+    it.each(["active", "trialing", "incomplete", "past_due", "unpaid", "paused"])(
+      "blocks a second checkout while a live %s subscription awaits its webhook",
+      async (status) => {
+        current = newOwner();
+        const s = await spies();
+        expect((await checkout()).status).toBe(200);
+        s.openSessions.mockResolvedValue({ data: [] } as never);
+        s.subscriptions.mockResolvedValue({ data: [subscription({ status })] } as never);
+
+        const response = await checkout();
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+        expect(s.sessions).toHaveBeenCalledOnce();
+        expect(await account(current.ownerId)).toMatchObject({ plan: "free", aiMode: null });
+      }
+    );
+
+    it("checks a completed session's pending subscription before creating another checkout", async () => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      s.openSessions.mockImplementation((async (args: { status: string }) => ({
+        data: args.status === "complete"
+          ? [{ id: "cs_complete", mode: "subscription", subscription: "sub_pending" }]
+          : [],
+      })) as never);
+      s.retrieveSubscription.mockResolvedValue(subscription({ id: "sub_pending", status: "incomplete" }) as never);
+
+      expect((await checkout()).status).toBe(409);
+      expect(s.retrieveSubscription).toHaveBeenCalledWith("sub_pending");
       expect(s.sessions).toHaveBeenCalledOnce();
     });
 
@@ -712,6 +879,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       expect((await checkout({ tier: "ultra", aiMode: "managed" })).status).toBe(200);
       expect(s.customers).not.toHaveBeenCalled();
       expect((s.sessions.mock.calls[0][0] as { customer: string }).customer).toBe(existing);
+      expect(s.sessions.mock.calls[0][0]).toMatchObject({ billing_address_collection: "required", customer_update: { address: "auto" } });
     });
 
     it("attaches organization checkouts to the organization and requires an admin", async () => {

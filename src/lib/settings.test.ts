@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 try {
   process.loadEnvFile(".env.local");
@@ -27,6 +27,8 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
   const savedManagedKey = process.env.OPENAI_API_KEY;
 
   beforeAll(async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2031-03-15T12:00:00Z"));
     process.env.BILLING_ENABLED = "true";
     process.env.MANAGED_AI_ENABLED = "true";
     delete process.env.OPENAI_API_KEY;
@@ -34,7 +36,7 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     const { getDb } = await import("@/db");
     const { billingAccounts, usageCounters } = await import("@/db/schema");
     const { currentPeriod } = await import("@/lib/usage");
-    const period = currentPeriod(new Date("2026-11-09T12:00:00Z"));
+    const period = currentPeriod();
 
     await getDb().insert(billingAccounts).values([
       { ownerId: ownerIds.proByok, plan: "pro", aiMode: "byok", status: "active" },
@@ -53,6 +55,7 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
   });
 
   afterAll(async () => {
+    vi.useRealTimers();
     if (savedBilling === undefined) delete process.env.BILLING_ENABLED;
     else process.env.BILLING_ENABLED = savedBilling;
 
@@ -64,12 +67,13 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
 
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { billingAccounts, githubConnections, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, billingAccounts, githubConnections, usageCounters } = await import("@/db/schema");
     const owners = Object.values(ownerIds);
     const users = Object.values(userIds);
     const db = getDb();
 
     await db.delete(usageCounters).where(inArray(usageCounters.ownerId, owners));
+    await db.delete(aiCredentials).where(inArray(aiCredentials.ownerId, owners));
     await db.delete(billingAccounts).where(inArray(billingAccounts.ownerId, owners));
     await db.delete(githubConnections).where(inArray(githubConnections.userId, users));
   });
@@ -131,5 +135,33 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     const noManagedKey = await getSetupStatus({ ownerId: ownerIds.free, userId: userIds.free });
     expect(noManagedKey.aiMode).toBe("byok");
     expect(noManagedKey.usage).toEqual({ used: 2, limit: null });
+  });
+
+  it("shares billing-off source selection between the dashboard meter, setup status and AI access", async () => {
+    const { getSetupStatus } = await import("./settings");
+    const { currentPeriod, getUsageMeter } = await import("./usage");
+    const { resolveAiAccess } = await import("./ai/access");
+    const { getDb } = await import("@/db");
+    const { aiCredentials, usageCounters } = await import("@/db/schema");
+    const { encrypt } = await import("./crypto");
+    const savedProvider = process.env.AI_PROVIDER;
+    process.env.BILLING_ENABLED = "false";
+    process.env.OPENAI_API_KEY = "sk-managed";
+    delete process.env.AI_PROVIDER;
+    try {
+      await getDb().insert(usageCounters).values({ ownerId: ownerIds.free, period: currentPeriod(), kind: "managed", count: 4 });
+      expect(await getUsageMeter(ownerIds.free)).toEqual({ kind: "managed", used: 4, limit: null });
+      expect(await getSetupStatus({ ownerId: ownerIds.free, userId: userIds.free })).toMatchObject({ aiMode: "managed", usage: { used: 4, limit: null } });
+      expect(await resolveAiAccess(ownerIds.free)).toMatchObject({ kind: "managed" });
+      process.env.AI_PROVIDER = "mock";
+      expect(await resolveAiAccess(ownerIds.free)).toMatchObject({ kind: "managed", provider: "mock" });
+      await getDb().insert(aiCredentials).values({ ownerId: ownerIds.free, provider: "openai", encryptedKey: encrypt("sk-own"), last4: "-own" });
+      expect(await getUsageMeter(ownerIds.free)).toEqual({ kind: "byok", used: 2, limit: null });
+      expect(await getSetupStatus({ ownerId: ownerIds.free, userId: userIds.free })).toMatchObject({ aiMode: "byok", usage: { used: 2, limit: null } });
+      expect(await resolveAiAccess(ownerIds.free)).toMatchObject({ kind: "byok", provider: "mock" });
+    } finally {
+      if (savedProvider === undefined) delete process.env.AI_PROVIDER;
+      else process.env.AI_PROVIDER = savedProvider;
+    }
   });
 });

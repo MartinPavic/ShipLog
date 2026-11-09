@@ -89,7 +89,7 @@ export function validateEnv(env: Env = process.env, production = env.NODE_ENV ==
   const warnings: string[] = [];
   if (isMockAi(env)) warnings.push("AI_PROVIDER=mock: generated logs are placeholders, not real AI output.");
   else if (on.managedAi && on.billing && !set("OPENAI_API_KEY")) {
-    warnings.push("OPENAI_API_KEY is not set: Pro workspaces will have to bring their own AI key.");
+    warnings.push("OPENAI_API_KEY is not set: Managed AI subscriptions cannot generate. Configure the server key or change the subscription to BYOK; saved workspace keys are not a fallback.");
   }
   if (on.delivery && !(set("RESEND_API_KEY") && set("RESEND_FROM"))) {
     warnings.push("RESEND_API_KEY / RESEND_FROM are not set: the email channel and failure notices are disabled.");

@@ -1,6 +1,6 @@
-import { and, count, desc, eq, getTableColumns, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, gte, ilike, inArray, lt, lte, not, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { shipLogVersions, shipLogs } from "@/db/schema";
+import { billingAccounts, shipLogVersions, shipLogs } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import type { PlanLimits } from "@/lib/plans";
 import { createShareToken, hashPassword } from "@/lib/share";
@@ -20,6 +20,11 @@ export type ShipLog = Omit<typeof shipLogs.$inferSelect, "sharePasswordHash"> & 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
+async function retainedHistory(ownerId: string) {
+  const [account] = await getDb().select({ through: billingAccounts.historyRetainedThrough }).from(billingAccounts).where(eq(billingAccounts.ownerId, ownerId)).limit(1);
+  return account?.through;
+}
+
 export async function listLogs(
   ownerId: string,
   projectId: string,
@@ -29,15 +34,18 @@ export async function listLogs(
   const db = getDb();
   const base = and(eq(shipLogs.ownerId, ownerId), eq(shipLogs.projectId, projectId));
   const conditions = [base];
+  let visible;
 
   if (Number.isFinite(limits.visibleLogs)) {
+    const retainedThrough = await retainedHistory(ownerId);
     const newest = db
       .select({ id: shipLogs.id })
       .from(shipLogs)
       .where(base)
       .orderBy(desc(shipLogs.createdAt))
       .limit(limits.visibleLogs);
-    conditions.push(inArray(shipLogs.id, newest));
+    visible = or(inArray(shipLogs.id, newest), retainedThrough ? lte(shipLogs.createdAt, retainedThrough) : undefined);
+    conditions.push(visible);
   }
   if (filters.q) {
     const pattern = `%${escapeLike(filters.q)}%`;
@@ -48,7 +56,7 @@ export async function listLogs(
   if (filters.pinned) conditions.push(eq(shipLogs.pinned, true));
   const where = and(...conditions);
 
-  const [items, [{ total }], [{ projectTotal }]] = await Promise.all([
+  const [items, [{ total }], [{ hidden }]] = await Promise.all([
     db
       .select({
         id: shipLogs.id,
@@ -67,10 +75,9 @@ export async function listLogs(
       .limit(filters.pageSize)
       .offset((filters.page - 1) * filters.pageSize),
     db.select({ total: count() }).from(shipLogs).where(where),
-    db.select({ projectTotal: count() }).from(shipLogs).where(base),
+    visible ? db.select({ hidden: count() }).from(shipLogs).where(and(base, not(visible))) : Promise.resolve([{ hidden: 0 }]),
   ]);
 
-  const hidden = Number.isFinite(limits.visibleLogs) ? Math.max(0, projectTotal - limits.visibleLogs) : 0;
   return { items, total, page: filters.page, pageSize: filters.pageSize, hidden };
 }
 
@@ -90,9 +97,10 @@ export async function requireLog(ownerId: string, id: string): Promise<ShipLog> 
   return log;
 }
 
-// Free plans only see their newest N logs per project.
 export async function assertLogVisible(log: ShipLog, limits: Pick<PlanLimits, "visibleLogs">) {
   if (!Number.isFinite(limits.visibleLogs)) return;
+  const retainedThrough = await retainedHistory(log.ownerId);
+  if (retainedThrough && log.createdAt <= retainedThrough) return;
   const [{ newer }] = await getDb()
     .select({ newer: count() })
     .from(shipLogs)

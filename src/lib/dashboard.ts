@@ -25,8 +25,8 @@ export function buildOnboarding(input: { github: boolean; gitlab?: boolean; ai: 
     },
     {
       id: "ai",
-      title: "Add an AI key",
-      description: "Use your own OpenAI, Anthropic or Grok key. Pro includes managed AI, so no key is needed.",
+      title: "Set up AI",
+      description: "Free and BYOK subscriptions require your own OpenAI, Anthropic or Grok key. A Managed AI subscription uses the server key; change mode in billing settings.",
       href: "/dashboard/settings",
       done: input.ai,
     },

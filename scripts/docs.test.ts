@@ -87,6 +87,15 @@ describe("documentation", () => {
     expect(missing).toEqual([]);
   });
 
+  it("describes locked AI modes and unavailable managed AI without promising BYOK fallback", () => {
+    expect(read("src/config/site.ts")).not.toContain("included managed AI on Pro");
+    expect(read("src/config/site.ts")).not.toContain("Pro workspaces can also use");
+    expect(read("docs/configuration.md")).not.toContain("everyone brings their own key");
+    expect(read("docs/services.md")).not.toContain("workspaces without their own key");
+    expect(read("docs/troubleshooting.md")).toContain("Managed AI is unavailable");
+    expect(read("src/env.ts")).not.toContain("Pro workspaces will have to bring their own AI key");
+  });
+
   it("lists every npm script in the README", () => {
     const scripts = Object.keys((JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts);
     const readme = read("README.md");

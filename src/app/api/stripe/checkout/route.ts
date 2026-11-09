@@ -16,6 +16,13 @@ const checkoutBodySchema = z.object({
   aiMode: z.enum(["byok", "managed"]),
 });
 
+const portalRequired = () => new ApiError(
+  409,
+  "You already have an active subscription. Use the billing portal to change plan or AI mode.",
+  "BILLING_PORTAL_REQUIRED"
+);
+
+const isLive = (status: string) => status !== "canceled" && status !== "incomplete_expired";
 
 export const POST = handle(async (req: Request) => {
   assertFeatureEnabled("billing");
@@ -37,11 +44,7 @@ export const POST = handle(async (req: Request) => {
       account?.status === "trialing" ||
       (!!account?.stripeSubscriptionId && account.status !== "canceled" && account.status !== "incomplete_expired");
     if (hasLiveSubscription) {
-      throw new ApiError(
-        409,
-        "You already have an active subscription. Use the billing portal to change plan or AI mode.",
-        "BILLING_PORTAL_REQUIRED"
-      );
+      throw portalRequired();
     }
 
     let customerId = account?.stripeCustomerId;
@@ -58,6 +61,23 @@ export const POST = handle(async (req: Request) => {
         .onConflictDoUpdate({ target: billingAccounts.ownerId, set: { stripeCustomerId: customerId } });
     }
 
+    let startingAfter: string | undefined;
+    do {
+      const page = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100, starting_after: startingAfter });
+      if (page.data.some((subscription) => isLive(subscription.status))) throw portalRequired();
+      startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
+    } while (startingAfter);
+
+    do {
+      const page = await stripe.checkout.sessions.list({ customer: customerId, status: "complete", limit: 100, starting_after: startingAfter });
+      for (const completed of page.data) {
+        if (completed.mode !== "subscription") continue;
+        const subscriptionId = typeof completed.subscription === "string" ? completed.subscription : completed.subscription?.id;
+        if (!subscriptionId || isLive((await stripe.subscriptions.retrieve(subscriptionId)).status)) throw portalRequired();
+      }
+      startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
+    } while (startingAfter);
+
     const openSessions = (await stripe.checkout.sessions.list({ customer: customerId, status: "open", limit: 10, expand: ["data.line_items"] })).data;
     const matching = openSessions.find(
       (candidate) => candidate.mode === "subscription" && candidate.line_items?.data?.some((item) => item.price?.id === priceId)
@@ -70,6 +90,8 @@ export const POST = handle(async (req: Request) => {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       automatic_tax: { enabled: true },
+      billing_address_collection: "required",
+      customer_update: { address: "auto" },
       success_url: `${appUrl()}/dashboard?success=true`,
       cancel_url: `${appUrl()}/dashboard?canceled=true`,
       metadata: { ownerId: owner.ownerId },
