@@ -55,7 +55,7 @@ describe.skipIf(!process.env.DATABASE_URL)("dashboard page (database)", () => {
     const db = getDb();
 
     await saveGithubConnection(pro.userId, { login: "dev", token: "t", scopes: "repo" });
-    await db.insert(billingAccounts).values({ ownerId: pro.ownerId, plan: "pro", status: "active" });
+    await db.insert(billingAccounts).values({ ownerId: pro.ownerId, plan: "pro", aiMode: "byok", status: "active" });
     await db.insert(aiCredentials).values({ ownerId: pro.ownerId, provider: "openai", encryptedKey: encrypt("sk"), last4: "x" });
     const alpha = await createProject(pro, createProjectSchema.parse({ name: "Alpha site" }), 5);
     const beta = await createProject(pro, createProjectSchema.parse({ name: "Beta api" }), 5);

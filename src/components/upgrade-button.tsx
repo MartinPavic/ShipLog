@@ -49,8 +49,8 @@ export function UpgradeButton() {
   return (
     <RedirectButton
       endpoint="/api/stripe/checkout"
-      label={`Upgrade to Pro — ${paidPriceLabel("pro", "managed")}`}
-      body={{ tier: "pro", aiMode: "managed" } satisfies CheckoutVariant}
+      label={`Upgrade to Pro — ${paidPriceLabel("pro", "byok")}`}
+      body={{ tier: "pro", aiMode: "byok" } satisfies CheckoutVariant}
     />
   );
 }

@@ -5,12 +5,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { siteConfig } from "@/config/site";
 import { features } from "@/env";
 import { getOwner, isAdmin } from "@/lib/owner";
-import type { Plan } from "@/lib/plans";
+import type { AiMode, Plan } from "@/lib/plans";
 import { getSetupStatus } from "@/lib/settings";
 
-function BillingCard({ plan, canManage }: { plan: Plan; canManage: boolean }) {
+function BillingCard({
+  plan,
+  aiMode,
+  usage,
+  aiReady,
+  demoAi,
+  canManage,
+}: {
+  plan: Plan;
+  aiMode: AiMode;
+  usage: { used: number; limit: number | null };
+  aiReady: boolean;
+  demoAi: boolean;
+  canManage: boolean;
+}) {
   const isPaid = plan !== "free";
   const label = plan === "ultra" ? "Ultra" : plan === "pro" ? "Pro" : "Free";
+  const modeLabel = aiMode === "managed" ? "Managed AI" : "BYOK";
+  const allowanceLabel = `${usage.used} / ${usage.limit === null ? "Unlimited" : usage.limit} generations this month`;
 
   return (
     <Card>
@@ -26,6 +42,21 @@ function BillingCard({ plan, canManage }: { plan: Plan; canManage: boolean }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 space-y-1 text-sm text-muted-foreground">
+          <p>AI mode: {modeLabel}</p>
+          <p>Allowance: {allowanceLabel}</p>
+        </div>
+        <div className="mb-4 space-y-1 text-sm text-muted-foreground">
+          {aiMode === "byok" ? (
+            <p>BYOK mode requires a workspace AI key.</p>
+          ) : (
+            <p>Managed AI mode uses the deployment key and ignores any saved workspace key.</p>
+          )}
+          <p>Switch AI mode through subscription management.</p>
+        </div>
+        {aiMode === "managed" && !demoAi && !aiReady && (
+          <p className="mb-4 text-sm text-danger">Managed AI is unavailable on this deployment. Add the managed key or switch this workspace to BYOK mode.</p>
+        )}
         {!canManage ? (
           <p className="text-sm text-muted-foreground">Only organization admins can manage billing.</p>
         ) : isPaid ? (
@@ -84,7 +115,16 @@ export default async function SettingsPage({
         <AiCard ai={status.ai} canManage={canManage} />
       )}
 
-      {features().billing && <BillingCard plan={status.plan} canManage={canManage} />}
+      {features().billing && (
+        <BillingCard
+          plan={status.plan}
+          aiMode={status.aiMode}
+          usage={status.usage}
+          aiReady={status.aiReady}
+          demoAi={status.demoAi}
+          canManage={canManage}
+        />
+      )}
     </div>
   );
 }
