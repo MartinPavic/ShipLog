@@ -104,6 +104,9 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
         aiMode,
         stripeCustomerId: idOf(sub.customer),
         stripeSubscriptionId: sub.id,
+        ...(event.type === "checkout.session.completed" && account?.stripeCheckoutSessionId === event.data.object.id
+          ? { stripeCheckoutSessionId: null }
+          : {}),
         status: sub.status,
         currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
         ...(plan === "free" && account && account.plan !== "free"

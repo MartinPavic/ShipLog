@@ -71,6 +71,13 @@
       "when": 1794228878688,
       "tag": "0009_past_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794229649891,
+      "tag": "0010_square_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }

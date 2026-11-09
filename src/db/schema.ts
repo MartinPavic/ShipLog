@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { AI_PROVIDERS } from "@/lib/ai/models";
+import type Stripe from "stripe";
 
 export type RepoProvider = "github" | "gitlab";
 export type ProjectRepo = { provider?: RepoProvider; fullName: string; branch?: string };
@@ -35,6 +36,12 @@ export const billingAccounts = pgTable("billing_accounts", {
   aiMode: text("ai_mode", { enum: ["byok", "managed"] }),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+  stripeCheckoutReservation: jsonb("stripe_checkout_reservation").$type<{
+    id: string;
+    createdAt: number;
+    params: Stripe.Checkout.SessionCreateParams;
+  }>(),
   status: text("status"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   historyRetainedThrough: timestamp("history_retained_through", { withTimezone: true }),

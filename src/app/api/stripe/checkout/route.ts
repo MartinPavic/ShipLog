@@ -1,6 +1,8 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import type Stripe from "stripe";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { billingAccounts } from "@/db/schema";
@@ -23,6 +25,10 @@ const portalRequired = () => new ApiError(
 );
 
 const isLive = (status: string) => status !== "canceled" && status !== "incomplete_expired";
+const matchesPrice = (session: Stripe.Checkout.Session, priceId: string) =>
+  session.mode === "subscription" && session.line_items?.data.length === 1 &&
+  !session.line_items.has_more && session.line_items.data[0].price?.id === priceId;
+const RESERVATION_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 
 export const POST = handle(async (req: Request) => {
   assertFeatureEnabled("billing");
@@ -31,7 +37,7 @@ export const POST = handle(async (req: Request) => {
   const priceId = stripePriceFor(variant);
   const db = getDb();
 
-  const session = await db.transaction(async (tx) => {
+  const advanceCheckout = () => db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"checkout:" + owner.ownerId}))`);
     const [account] = await tx
       .select()
@@ -45,6 +51,17 @@ export const POST = handle(async (req: Request) => {
       (!!account?.stripeSubscriptionId && account.status !== "canceled" && account.status !== "incomplete_expired");
     if (hasLiveSubscription) {
       throw portalRequired();
+    }
+
+    if (account?.stripeCheckoutReservation) {
+      const reservation = account.stripeCheckoutReservation;
+      if (Date.now() - reservation.createdAt >= RESERVATION_RETRY_WINDOW_MS) throw portalRequired();
+      const created = await stripe.checkout.sessions.create(reservation.params, { idempotencyKey: reservation.id });
+      await tx.update(billingAccounts).set({
+        stripeCheckoutSessionId: created.id,
+        stripeCheckoutReservation: null,
+      }).where(eq(billingAccounts.ownerId, owner.ownerId));
+      return null;
     }
 
     let customerId = account?.stripeCustomerId;
@@ -68,24 +85,40 @@ export const POST = handle(async (req: Request) => {
       startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
     } while (startingAfter);
 
+    if (account?.stripeCheckoutSessionId) {
+      const pending = await stripe.checkout.sessions.retrieve(account.stripeCheckoutSessionId, { expand: ["line_items"] });
+      if (pending.status === "open") {
+        if (matchesPrice(pending, priceId) && pending.url) return pending;
+        try {
+          const expired = await stripe.checkout.sessions.expire(pending.id);
+          if (expired.status !== "expired") throw portalRequired();
+        } catch (error) {
+          const current = await stripe.checkout.sessions.retrieve(pending.id);
+          if (current.status !== "open" && current.status !== "expired") throw portalRequired();
+          throw error;
+        }
+      } else if (pending.status !== "expired") {
+        throw portalRequired();
+      }
+      await tx.update(billingAccounts).set({ stripeCheckoutSessionId: null }).where(eq(billingAccounts.ownerId, owner.ownerId));
+    }
+
     do {
-      const page = await stripe.checkout.sessions.list({ customer: customerId, status: "complete", limit: 100, starting_after: startingAfter });
-      for (const completed of page.data) {
-        if (completed.mode !== "subscription") continue;
-        const subscriptionId = typeof completed.subscription === "string" ? completed.subscription : completed.subscription?.id;
-        if (!subscriptionId || isLive((await stripe.subscriptions.retrieve(subscriptionId)).status)) throw portalRequired();
+      const page = await stripe.checkout.sessions.list({ customer: customerId, limit: 100, starting_after: startingAfter });
+      for (const candidate of page.data) {
+        if (candidate.mode !== "subscription" || candidate.status === "expired") continue;
+        if (candidate.status === "complete") {
+          const subscriptionId = typeof candidate.subscription === "string" ? candidate.subscription : candidate.subscription?.id;
+          if (!subscriptionId || isLive((await stripe.subscriptions.retrieve(subscriptionId)).status)) throw portalRequired();
+        } else {
+          await tx.update(billingAccounts).set({ stripeCheckoutSessionId: candidate.id }).where(eq(billingAccounts.ownerId, owner.ownerId));
+          return null;
+        }
       }
       startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
     } while (startingAfter);
 
-    const openSessions = (await stripe.checkout.sessions.list({ customer: customerId, status: "open", limit: 10, expand: ["data.line_items"] })).data;
-    const matching = openSessions.find(
-      (candidate) => candidate.mode === "subscription" && candidate.line_items?.data?.some((item) => item.price?.id === priceId)
-    );
-    if (matching?.url) return matching;
-    await Promise.all(openSessions.map((candidate) => stripe.checkout.sessions.expire(candidate.id)));
-
-    return stripe.checkout.sessions.create({
+    const params: Stripe.Checkout.SessionCreateParams = {
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -96,8 +129,16 @@ export const POST = handle(async (req: Request) => {
       cancel_url: `${appUrl()}/dashboard?canceled=true`,
       metadata: { ownerId: owner.ownerId },
       subscription_data: { metadata: { ownerId: owner.ownerId } },
-    });
+    };
+    await tx.update(billingAccounts).set({
+      stripeCheckoutReservation: { id: `checkout-${randomUUID()}`, createdAt: Date.now(), params },
+    }).where(eq(billingAccounts.ownerId, owner.ownerId));
+    return null;
   });
+  let session = await advanceCheckout();
+  while (!session) {
+    session = await advanceCheckout();
+  }
 
   return NextResponse.json({ url: session.url });
 });

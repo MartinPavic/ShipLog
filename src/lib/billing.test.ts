@@ -1,8 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type Stripe from "stripe";
 
-try {
-  process.loadEnvFile(".env.local");
-} catch {}
 process.env.STRIPE_SECRET_KEY ||= "sk_test_dummy";
 process.env.STRIPE_PRICE_PRO_BYOK_ID ||= "price_pro_byok_test";
 process.env.STRIPE_PRICE_PRO_MANAGED_ID ||= "price_pro_managed_test";
@@ -444,6 +442,26 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
   });
 
   describe("webhook: checkout.session.completed", () => {
+    it.each([true, false])("clears only a matching pending checkout ID (matching=%s)", async (matching) => {
+      const owner = newOwner();
+      const customer = customerId();
+      const pendingId = `cs_${rand()}`;
+      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId } });
+      await seedAccount(owner.ownerId, { stripeCustomerId: customer, stripeCheckoutSessionId: pendingId });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+
+      const response = await deliver(event("checkout.session.completed", {
+        id: matching ? pendingId : `cs_other_${rand()}`,
+        mode: "subscription", customer, subscription: sub.id, metadata: { ownerId: owner.ownerId },
+      }));
+
+      expect(response.status).toBe(200);
+      expect(await account(owner.ownerId)).toMatchObject({
+        stripeSubscriptionId: sub.id,
+        stripeCheckoutSessionId: matching ? null : pendingId,
+      });
+    });
+
     it("rechecks current subscription identity when another subscription replaces it under the workspace lock", async () => {
       const owner = newOwner();
       const customer = customerId();
@@ -672,7 +690,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     const sessionUrl = "https://checkout.test/session";
     async function spies() {
       const stripe = await stripeLib();
-      const openSessions: { id: string; url: string; mode: string; line_items: { data: Array<{ price: { id: string } }> } }[] = [];
+      const openSessions: { id: string; url: string; mode: string; status: string; line_items: { data: Array<{ price: { id: string } }> } }[] = [];
       return {
         customers: vi.spyOn(stripe.customers, "create").mockImplementation((async () => ({ id: customerId() })) as never),
         sessions: vi.spyOn(stripe.checkout.sessions, "create").mockImplementation((async (args: { line_items: Array<{ price: string }> }) => {
@@ -680,17 +698,27 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
             id: `cs_${rand()}`,
             url: sessionUrl,
             mode: "subscription",
+            status: "open",
             line_items: { data: [{ price: { id: args.line_items[0]!.price } }] },
           };
           openSessions.push(session);
           return session;
         }) as never),
         openSessions: vi.spyOn(stripe.checkout.sessions, "list").mockImplementation((async (args: { status: string }) => ({
-          data: args.status === "open" ? [...openSessions] : [],
+          data: openSessions.filter((session) => !args.status || session.status === args.status),
         })) as never),
+        retrieveSession: vi.spyOn(stripe.checkout.sessions, "retrieve").mockImplementation((async (sessionId: string) => {
+          const session = openSessions.find((candidate) => candidate.id === sessionId);
+          if (!session) throw new Error("Unknown mock checkout session");
+          return session;
+        }) as never),
         subscriptions: vi.spyOn(stripe.subscriptions, "list").mockResolvedValue({ data: [] } as never),
         retrieveSubscription: vi.spyOn(stripe.subscriptions, "retrieve").mockResolvedValue({ status: "canceled" } as never),
-        expire: vi.spyOn(stripe.checkout.sessions, "expire").mockResolvedValue({ id: "cs_old" } as never),
+        expire: vi.spyOn(stripe.checkout.sessions, "expire").mockImplementation((async (sessionId: string) => {
+          const session = openSessions.find((candidate) => candidate.id === sessionId);
+          if (session) session.status = "expired";
+          return { id: sessionId, status: "expired" };
+        }) as never),
         portal: vi.spyOn(stripe.billingPortal.sessions, "create").mockResolvedValue({ url: "https://portal.test/p" } as never),
       };
     }
@@ -703,6 +731,173 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       return (await import("@/app/api/stripe/checkout/route")).POST(request);
     };
     const portal = async () => (await import("@/app/api/stripe/portal/route")).POST();
+
+    it("blocks completion between session listing/retrieval and replacement creation", async () => {
+      current = newOwner();
+      const s = await spies();
+      const first = await checkout();
+      expect(first.status).toBe(200);
+      expect(await first.json()).toEqual({ url: sessionUrl });
+      const originalSession = await s.sessions.mock.results[0].value;
+      let entered!: () => void;
+      let resume!: () => void;
+      const gated = new Promise<void>((resolve) => { entered = resolve; });
+      const released = new Promise<void>((resolve) => { resume = resolve; });
+      s.openSessions.mockImplementation((async (args: { status: string }) => {
+        if (args.status === "open") { entered(); await released; }
+        return { data: [] };
+      }) as never);
+      s.retrieveSession.mockImplementation((async () => {
+        entered();
+        await released;
+        return { ...originalSession, status: "complete", subscription: "sub_pending" };
+      }) as never);
+
+      const second = checkout();
+      await gated;
+      originalSession.status = "complete";
+      resume();
+      const response = await second;
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+      expect(s.sessions).toHaveBeenCalledOnce();
+    });
+
+    it("adopts an untracked session that completes during unfiltered discovery", async () => {
+      current = newOwner();
+      await seedAccount(current.ownerId, { stripeCustomerId: customerId() });
+      const s = await spies();
+      const pending = { id: "cs_untracked", mode: "subscription", status: "open", url: sessionUrl };
+      s.openSessions.mockImplementation((async (args: { status?: string }) => {
+        expect(args.status).toBeUndefined();
+        const snapshot = { ...pending };
+        pending.status = "complete";
+        return { data: [snapshot] };
+      }) as never);
+      s.retrieveSession.mockImplementation((async () => pending) as never);
+
+      const response = await checkout();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+      expect(await account(current.ownerId)).toMatchObject({ stripeCheckoutSessionId: pending.id });
+      expect(s.sessions).not.toHaveBeenCalled();
+    });
+
+    it.each(["open", "complete"])("recovers a lost create response without duplicating a now-%s session", async (status) => {
+      current = newOwner();
+      const s = await spies();
+      const create = s.sessions.getMockImplementation()!;
+      let remote: Stripe.Response<Stripe.Checkout.Session> | undefined;
+      let createdCount = 0;
+      s.sessions.mockImplementation((async (params: Stripe.Checkout.SessionCreateParams, options: Stripe.RequestOptions) => {
+        expect(await account(current.ownerId)).toMatchObject({
+          stripeCheckoutSessionId: null,
+          stripeCheckoutReservation: { id: options.idempotencyKey, params },
+        });
+        if (!remote) {
+          remote = await create(params, options);
+          createdCount++;
+          throw new Error("Stripe created the session but its response was lost");
+        }
+        expect(options).toEqual(s.sessions.mock.calls[0][1]);
+        expect(params).toEqual(s.sessions.mock.calls[0][0]);
+        return remote;
+      }) as never);
+
+      expect((await checkout()).status).toBe(500);
+      expect(remote).toBeDefined();
+      remote!.status = status as "open" | "complete";
+      const response = await checkout();
+      expect(response.status).toBe(status === "open" ? 200 : 409);
+      expect(createdCount).toBe(1);
+      expect(s.sessions).toHaveBeenCalledTimes(2);
+      expect(await account(current.ownerId)).toMatchObject({
+        stripeCheckoutSessionId: remote!.id,
+        stripeCheckoutReservation: null,
+        plan: "free", aiMode: null,
+      });
+    });
+
+    it("fails closed rather than retrying an ambiguous reservation beyond the idempotency window", async () => {
+      current = newOwner();
+      const s = await spies();
+      s.sessions.mockRejectedValue(new Error("Ambiguous Stripe failure"));
+      expect((await checkout()).status).toBe(500);
+      const stored = await account(current.ownerId);
+      expect(stored.stripeCheckoutReservation).not.toBeNull();
+      vi.spyOn(Date, "now").mockReturnValue(stored.stripeCheckoutReservation!.createdAt + 23 * 60 * 60 * 1000);
+
+      const response = await checkout();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+      expect(s.sessions).toHaveBeenCalledOnce();
+      expect(await account(current.ownerId)).toMatchObject({ stripeCheckoutReservation: stored.stripeCheckoutReservation });
+    });
+
+    it("blocks replacement if completion wins the expiration race", async () => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      const pending = await s.sessions.mock.results[0].value;
+      s.expire.mockImplementation((async () => {
+        pending.status = "complete";
+        throw new Error("Session is no longer open");
+      }) as never);
+
+      const response = await checkout({ tier: "ultra", aiMode: "byok" });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+      expect(s.sessions).toHaveBeenCalledOnce();
+      expect(await account(current.ownerId)).toMatchObject({ stripeCheckoutSessionId: pending.id });
+    });
+
+    it("persists and retrieves the exact open session instead of relying on lists", async () => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      const pending = await s.sessions.mock.results[0].value;
+      expect(await account(current.ownerId)).toMatchObject({ stripeCheckoutSessionId: pending.id });
+      s.openSessions.mockResolvedValue({ data: [] } as never);
+      expect((await checkout()).status).toBe(200);
+      expect(s.retrieveSession).toHaveBeenCalledWith(pending.id, { expand: ["line_items"] });
+      expect(s.sessions).toHaveBeenCalledOnce();
+    });
+
+    it("replaces an expired pending session", async () => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      const pending = await s.sessions.mock.results[0].value;
+      pending.status = "expired";
+      expect((await checkout()).status).toBe(200);
+      expect(s.sessions).toHaveBeenCalledTimes(2);
+      const replacement = await s.sessions.mock.results[1].value;
+      expect(await account(current.ownerId)).toMatchObject({ stripeCheckoutSessionId: replacement.id });
+    });
+
+    it("expires the exact pending session before changing variant", async () => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      const pending = await s.sessions.mock.results[0].value;
+      expect((await checkout({ tier: "ultra", aiMode: "byok" })).status).toBe(200);
+      expect(s.expire).toHaveBeenCalledWith(pending.id);
+      expect(s.sessions).toHaveBeenCalledTimes(2);
+      expect(s.sessions.mock.calls[1][0]).toMatchObject({ line_items: [{ price: PRICE_IDS.ultraByok, quantity: 1 }] });
+    });
+
+    it.each(["complete", null])("blocks a %s pending session without creating another", async (status) => {
+      current = newOwner();
+      const s = await spies();
+      expect((await checkout()).status).toBe(200);
+      const pending = await s.sessions.mock.results[0].value;
+      s.retrieveSession.mockResolvedValue({ ...pending, status } as never);
+      s.openSessions.mockResolvedValue({ data: [] } as never);
+      const response = await checkout();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
+      expect(s.sessions).toHaveBeenCalledOnce();
+    });
 
     it.each([
       [{ tier: "pro", aiMode: "byok" }, PRICE_IDS.proByok],
@@ -789,16 +984,18 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
       expect(responses.map((response) => response.status)).toEqual([200, 200]);
       expect(s.sessions).toHaveBeenCalledOnce();
-      expect(s.openSessions.mock.calls.filter(([args]) => args?.status === "open")).toHaveLength(2);
+      const pending = await s.sessions.mock.results[0].value;
+      expect(s.retrieveSession).toHaveBeenCalledWith(pending.id, { expand: ["line_items"] });
+      expect(await Promise.all(responses.map((response) => response.json()))).toEqual([{ url: sessionUrl }, { url: sessionUrl }]);
       expect(s.customers).toHaveBeenCalledOnce();
     });
 
     it("expires an open session with an old configured price", async () => {
       current = newOwner();
       const s = await spies();
-      s.openSessions.mockImplementation((async (args: { status: string }) => ({
-        data: args.status === "open" ? [{ id: "cs_old", url: "https://checkout.test/old", mode: "subscription", line_items: { data: [{ price: { id: "price_old" } }] } }] : [],
-      })) as never);
+      const old = { id: "cs_old", status: "open", url: "https://checkout.test/old", mode: "subscription", line_items: { data: [{ price: { id: "price_old" } }] } };
+      s.openSessions.mockResolvedValueOnce({ data: [old] } as never);
+      s.retrieveSession.mockResolvedValueOnce(old as never);
 
       expect((await checkout({ tier: "pro", aiMode: "managed" })).status).toBe(200);
       expect(s.expire).toHaveBeenCalledWith("cs_old");
@@ -824,18 +1021,14 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
     it("checks a completed session's pending subscription before creating another checkout", async () => {
       current = newOwner();
+      await seedAccount(current.ownerId, { stripeCustomerId: customerId() });
       const s = await spies();
-      expect((await checkout()).status).toBe(200);
-      s.openSessions.mockImplementation((async (args: { status: string }) => ({
-        data: args.status === "complete"
-          ? [{ id: "cs_complete", mode: "subscription", subscription: "sub_pending" }]
-          : [],
-      })) as never);
+      s.openSessions.mockResolvedValue({ data: [{ id: "cs_complete", status: "complete", mode: "subscription", subscription: "sub_pending" }] } as never);
       s.retrieveSubscription.mockResolvedValue(subscription({ id: "sub_pending", status: "incomplete" }) as never);
 
       expect((await checkout()).status).toBe(409);
       expect(s.retrieveSubscription).toHaveBeenCalledWith("sub_pending");
-      expect(s.sessions).toHaveBeenCalledOnce();
+      expect(s.sessions).not.toHaveBeenCalled();
     });
 
     it("blocks owners with active subscriptions and tells them to use the billing portal", async () => {
