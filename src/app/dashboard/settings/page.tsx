@@ -5,28 +5,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { siteConfig } from "@/config/site";
 import { features } from "@/env";
 import { getOwner, isAdmin } from "@/lib/owner";
+import type { Plan } from "@/lib/plans";
 import { getSetupStatus } from "@/lib/settings";
 
-function BillingCard({ plan, canManage }: { plan: "free" | "pro"; canManage: boolean }) {
+function BillingCard({ plan, canManage }: { plan: Plan; canManage: boolean }) {
+  const isPaid = plan !== "free";
+  const label = plan === "ultra" ? "Ultra" : plan === "pro" ? "Pro" : "Free";
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Billing
-          <Badge variant={plan === "pro" ? "default" : "secondary"}>
-            {plan === "pro" ? "Pro" : "Free"}
-          </Badge>
+          <Badge variant={isPaid ? "default" : "secondary"}>{label}</Badge>
         </CardTitle>
         <CardDescription>
-          {plan === "pro"
+          {isPaid
             ? "Manage your subscription, payment method and invoices."
-            : "Upgrade for unlimited projects, full history and managed AI."}
+            : "Upgrade for more projects, full history and managed AI."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {!canManage ? (
           <p className="text-sm text-muted-foreground">Only organization admins can manage billing.</p>
-        ) : plan === "pro" ? (
+        ) : isPaid ? (
           <ManageBillingButton />
         ) : (
           <UpgradeButton />

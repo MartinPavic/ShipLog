@@ -31,7 +31,8 @@ const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull(
 
 export const billingAccounts = pgTable("billing_accounts", {
   ownerId: text("owner_id").primaryKey(),
-  plan: text("plan", { enum: ["free", "pro"] }).notNull().default("free"),
+  plan: text("plan", { enum: ["free", "pro", "ultra"] }).notNull().default("free"),
+  aiMode: text("ai_mode", { enum: ["byok", "managed"] }),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id"),
   status: text("status"),

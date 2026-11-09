@@ -16,6 +16,7 @@ describe("limitsFor with feature flags", () => {
   it("returns the plan's limits untouched when everything is on", () => {
     expect(limitsFor("free", "user_1")).toBe(PLAN_LIMITS.free);
     expect(limitsFor("pro", "user_1")).toBe(PLAN_LIMITS.pro);
+    expect(limitsFor("ultra", "user_1")).toBe(PLAN_LIMITS.ultra);
   });
 
   it("gives everyone unlimited use when billing is off, including organizations", () => {
@@ -88,7 +89,7 @@ describe("planHighlights", () => {
       "Share links and public changelog",
     ]);
     const pro = planHighlights("pro");
-    expect(pro).toContain("200 managed-AI generations / month");
+    expect(pro).toContain("50 managed-AI generations / month");
     expect(pro).toContain("Teams with organizations");
     expect(pro).toContain("PDF export");
   });
