@@ -4,7 +4,11 @@ try {
   process.loadEnvFile(".env.local");
 } catch {}
 process.env.STRIPE_SECRET_KEY ||= "sk_test_dummy";
-process.env.STRIPE_PRICE_ID ||= "price_test";
+process.env.STRIPE_PRICE_PRO_BYOK_ID ||= "price_pro_byok_test";
+process.env.STRIPE_PRICE_PRO_MANAGED_ID ||= "price_pro_managed_test";
+process.env.STRIPE_PRICE_ULTRA_BYOK_ID ||= "price_ultra_byok_test";
+process.env.STRIPE_PRICE_ULTRA_MANAGED_ID ||= "price_ultra_managed_test";
+process.env.STRIPE_PRICE_ID ||= "price_legacy_single_test";
 
 vi.mock("@clerk/nextjs/server", () => ({
   currentUser: async () => ({ emailAddresses: [{ emailAddress: "billing@example.com" }] }),
@@ -29,6 +33,13 @@ vi.mock("@/lib/owner", async (importOriginal) => {
 
 const rand = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const WEBHOOK_SECRET = "whsec_test_secret_value";
+const PRICE_IDS = {
+  proByok: process.env.STRIPE_PRICE_PRO_BYOK_ID!,
+  proManaged: process.env.STRIPE_PRICE_PRO_MANAGED_ID!,
+  ultraByok: process.env.STRIPE_PRICE_ULTRA_BYOK_ID!,
+  ultraManaged: process.env.STRIPE_PRICE_ULTRA_MANAGED_ID!,
+  legacy: process.env.STRIPE_PRICE_ID!,
+} as const;
 
 describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
   const createdOwners: string[] = [];
@@ -52,13 +63,18 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     return id;
   };
 
+  const recurringItem = (priceId: string, currentPeriodEnd = 1_900_000_000) => ({
+    current_period_end: currentPeriodEnd,
+    price: { id: priceId, type: "recurring" },
+  });
+
   const subscription = (over: Record<string, unknown> = {}) => ({
     id: `sub_${rand()}`,
     object: "subscription",
     customer: "cus_x",
     status: "active",
     metadata: {},
-    items: { data: [{ current_period_end: 1_900_000_000 }] },
+    items: { data: [recurringItem(PRICE_IDS.proManaged)] },
     ...over,
   });
   const event = (type: string, object: unknown, id = eventId()) => ({ id, object: "event", type, data: { object } });
@@ -109,14 +125,23 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
   });
 
   describe("webhook: subscription lifecycle", () => {
-    it("activates Pro from a new subscription and records customer and period end", async () => {
+    it.each([
+      [PRICE_IDS.proByok, "pro", "byok"],
+      [PRICE_IDS.proManaged, "pro", "managed"],
+      [PRICE_IDS.ultraByok, "ultra", "byok"],
+      [PRICE_IDS.ultraManaged, "ultra", "managed"],
+    ] as const)("grants %s as %s/%s for active subscriptions", async (priceId, plan, aiMode) => {
       const owner = newOwner();
       const customer = customerId();
-      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId } });
+      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(priceId)] } });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+
       const res = await deliver(event("customer.subscription.updated", sub));
       expect(res.status).toBe(200);
+      expect(retrieve).toHaveBeenCalledWith(sub.id);
       expect(await account(owner.ownerId)).toMatchObject({
-        plan: "pro",
+        plan,
+        aiMode,
         status: "active",
         stripeCustomerId: customer,
         stripeSubscriptionId: sub.id,
@@ -124,29 +149,83 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       });
     });
 
-    it.each([
-      ["trialing", "pro"],
-      ["active", "pro"],
-      ["past_due", "free"],
-      ["unpaid", "free"],
-      ["incomplete", "free"],
-      ["incomplete_expired", "free"],
-      ["canceled", "free"],
-      ["paused", "free"],
-    ])("maps status %s to the %s plan", async (status, plan) => {
+    it("grants entitlement for trialing subscriptions with a recognized price", async () => {
       const owner = newOwner();
-      const sub = subscription({ customer: customerId(), status, metadata: { ownerId: owner.ownerId } });
+      const sub = subscription({
+        customer: customerId(),
+        status: "trialing",
+        metadata: { ownerId: owner.ownerId },
+        items: { data: [recurringItem(PRICE_IDS.ultraByok)] },
+      });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+
       await deliver(event("customer.subscription.updated", sub));
-      expect(await account(owner.ownerId)).toMatchObject({ plan, status });
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "byok", status: "trialing" });
+    });
+
+    it.each(["past_due", "unpaid", "incomplete", "incomplete_expired", "canceled", "paused"])(
+      "stores free/null when status is %s",
+      async (status) => {
+        const owner = newOwner();
+        const sub = subscription({
+          customer: customerId(),
+          status,
+          metadata: { ownerId: owner.ownerId },
+          items: { data: [recurringItem(PRICE_IDS.ultraManaged)] },
+        });
+        vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+
+        await deliver(event("customer.subscription.updated", sub));
+        expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null, status });
+      }
+    );
+
+    it.each([
+      ["unknown", [recurringItem("price_unknown")]],
+      ["legacy single-price", [recurringItem(PRICE_IDS.legacy)]],
+      ["missing recurring price", [{ current_period_end: 1_900_000_000, price: null }]],
+      ["multiple recognized prices", [recurringItem(PRICE_IDS.proByok), recurringItem(PRICE_IDS.ultraManaged)]],
+    ] as const)("stores free/null for %s entitlements", async (_label, items) => {
+      const owner = newOwner();
+      const sub = subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId }, items: { data: items } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+
+      await deliver(event("customer.subscription.updated", sub));
+      expect(await account(owner.ownerId)).toMatchObject({
+        plan: "free",
+        aiMode: null,
+        status: "active",
+        stripeSubscriptionId: sub.id,
+      });
+    });
+
+    it("switches plan and mode as the subscription price changes", async () => {
+      const owner = newOwner();
+      const customer = customerId();
+      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proByok)] } });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(sub as never)
+        .mockResolvedValueOnce({ ...sub, items: { data: [recurringItem(PRICE_IDS.ultraManaged)] } } as never);
+
+      await deliver(event("customer.subscription.updated", sub));
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "pro", aiMode: "byok" });
+
+      await deliver(event("customer.subscription.updated", sub));
+      expect(retrieve).toHaveBeenCalledTimes(2);
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "managed" });
     });
 
     it("walks through cancel, failed payment and reactivation", async () => {
       const owner = newOwner();
       const customer = customerId();
-      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId } });
+      const sub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.proManaged)] } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(sub as never)
+        .mockResolvedValueOnce({ ...sub, metadata: {}, items: { data: [recurringItem(PRICE_IDS.proManaged)] } } as never)
+        .mockResolvedValueOnce({ ...sub, status: "canceled", metadata: {} } as never);
 
       await deliver(event("customer.subscription.updated", sub));
-      expect((await account(owner.ownerId)).plan).toBe("pro");
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "pro", aiMode: "managed" });
 
       // The owner is found through the stored customer, so later events don't need metadata.
       await deliver(event("invoice.payment_failed", {
@@ -154,19 +233,20 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
         customer,
         parent: { type: "subscription_details", subscription_details: { subscription: sub.id } },
       }));
-      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", status: "past_due" });
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null, status: "past_due" });
 
       await deliver(event("customer.subscription.updated", { ...sub, metadata: {} }));
-      expect((await account(owner.ownerId)).plan).toBe("pro");
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "pro", aiMode: "managed" });
 
       await deliver(event("customer.subscription.deleted", { ...sub, status: "canceled", metadata: {} }));
-      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", status: "canceled", stripeCustomerId: customer });
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null, status: "canceled", stripeCustomerId: customer });
     });
 
     it("ignores a payment failure for a subscription that has been replaced", async () => {
       const owner = newOwner();
       const customer = customerId();
       const currentSubscription = subscription({ customer, metadata: { ownerId: owner.ownerId } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(currentSubscription as never);
       await deliver(event("customer.subscription.updated", currentSubscription));
 
       await deliver(event("invoice.payment_failed", {
@@ -177,6 +257,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
       expect(await account(owner.ownerId)).toMatchObject({
         plan: "pro",
+        aiMode: "managed",
         status: "active",
         stripeSubscriptionId: currentSubscription.id,
       });
@@ -186,35 +267,45 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       const owner = newOwner();
       const customer = customerId();
       const sub = subscription({ customer, metadata: { ownerId: owner.ownerId } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
       await deliver(event("customer.subscription.updated", sub));
 
       await deliver(event("invoice.payment_failed", { id: "in_legacy", customer, subscription: sub.id }));
 
-      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", status: "past_due", stripeSubscriptionId: sub.id });
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "free", aiMode: null, status: "past_due", stripeSubscriptionId: sub.id });
     });
 
     it("supports organization owners", async () => {
       const org = newOwner(true);
-      await deliver(event("customer.subscription.updated", subscription({ customer: customerId(), metadata: { ownerId: org.ownerId } })));
-      expect(await account(org.ownerId)).toMatchObject({ plan: "pro" });
+      const sub = subscription({ customer: customerId(), metadata: { ownerId: org.ownerId }, items: { data: [recurringItem(PRICE_IDS.ultraByok)] } });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+      await deliver(event("customer.subscription.updated", sub));
+      expect(await account(org.ownerId)).toMatchObject({ plan: "ultra", aiMode: "byok" });
       const { getPlanLimits } = await import("@/lib/plans");
       expect((await getPlanLimits(org.ownerId)).limits.teams).toBe(true);
     });
 
-    it("ignores events from a subscription that was replaced by a newer one", async () => {
+    it("uses the latest subscription snapshot so stale event payloads cannot overwrite newer entitlements", async () => {
       const owner = newOwner();
       const customer = customerId();
-      const newer = subscription({ customer, metadata: { ownerId: owner.ownerId } });
-      await deliver(event("customer.subscription.updated", newer));
+      const currentSub = subscription({ customer, metadata: { ownerId: owner.ownerId }, items: { data: [recurringItem(PRICE_IDS.ultraManaged)] } });
+      const retrieve = vi.spyOn((await stripeLib()).subscriptions, "retrieve")
+        .mockResolvedValueOnce(currentSub as never)
+        .mockResolvedValueOnce(currentSub as never);
 
-      const older = subscription({ customer, status: "canceled", metadata: { ownerId: owner.ownerId } });
-      await deliver(event("customer.subscription.deleted", older));
-      expect(await account(owner.ownerId)).toMatchObject({ plan: "pro", stripeSubscriptionId: newer.id });
+      await deliver(event("customer.subscription.updated", { ...currentSub, status: "active" }));
+      await deliver(event("customer.subscription.deleted", { ...currentSub, status: "canceled", items: { data: [recurringItem(PRICE_IDS.proByok)] } }));
+
+      expect(retrieve).toHaveBeenNthCalledWith(1, currentSub.id);
+      expect(retrieve).toHaveBeenNthCalledWith(2, currentSub.id);
+      expect(await account(owner.ownerId)).toMatchObject({ plan: "ultra", aiMode: "managed", stripeSubscriptionId: currentSub.id });
     });
 
     it("ignores events it cannot attribute to anyone", async () => {
       const unknown = customerId();
-      expect((await deliver(event("customer.subscription.updated", subscription({ customer: unknown })))).status).toBe(200);
+      const sub = subscription({ customer: unknown });
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(sub as never);
+      expect((await deliver(event("customer.subscription.updated", sub))).status).toBe(200);
       expect((await deliver(event("invoice.payment_failed", { id: "in_2", customer: unknown }))).status).toBe(200);
       const { getDb } = await import("@/db");
       const { billingAccounts } = await import("@/db/schema");
@@ -257,6 +348,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     it("rejects missing, forged and wrongly signed requests without touching data", async () => {
       const owner = newOwner();
       const evt = event("customer.subscription.updated", subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId } }));
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(evt.data.object as never);
 
       expect((await deliver(evt, { signature: null })).status).toBe(400);
       expect((await deliver(evt, { signature: "t=1,v1=deadbeef" })).status).toBe(400);
@@ -284,6 +376,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     it("processes a given event id only once", async () => {
       const owner = newOwner();
       const evt = event("customer.subscription.updated", subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId } }));
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(evt.data.object as never);
 
       expect(await (await deliver(evt)).json()).toEqual({ received: true });
       // If the replay were processed it would overwrite this.
@@ -299,6 +392,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     it("has exactly one winner when the same event arrives concurrently", async () => {
       const owner = newOwner();
       const evt = event("customer.subscription.updated", subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId } }));
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(evt.data.object as never);
       const responses = await Promise.all(Array.from({ length: 6 }, () => deliver(evt)));
       const bodies = await Promise.all(responses.map(async (response) => ({ status: response.status, body: await response.json() })));
       expect(bodies.filter((result) => result.status === 200 && !result.body.duplicate)).toHaveLength(1);
@@ -309,6 +403,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     it("reclaims an event claim abandoned beyond the processing lease", async () => {
       const owner = newOwner();
       const evt = event("customer.subscription.updated", subscription({ customer: customerId(), metadata: { ownerId: owner.ownerId } }));
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(evt.data.object as never);
       const { getDb } = await import("@/db");
       const { stripeEvents } = await import("@/db/schema");
       await getDb().insert(stripeEvents).values({ id: evt.id, status: "processing", updatedAt: new Date(Date.now() - 10 * 60 * 1000) });
@@ -325,6 +420,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       const owner = newOwner();
       const customer = customerId();
       const evt = event("customer.subscription.updated", subscription({ customer, metadata: { ownerId: owner.ownerId } }));
+      vi.spyOn((await stripeLib()).subscriptions, "retrieve").mockResolvedValue(evt.data.object as never);
       const first = await claimStripeEvent(evt.id);
       expect(first.status).toBe("claimed");
       if (first.status !== "claimed") throw new Error("Expected initial claim");
@@ -381,12 +477,16 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
     const sessionUrl = "https://checkout.test/session";
     async function spies() {
       const stripe = await stripeLib();
-      const { STRIPE_PRICE_ID } = await import("@/lib/stripe");
-      const openSessions: { id: string; url: string }[] = [];
+      const openSessions: { id: string; url: string; mode: string; line_items: { data: Array<{ price: { id: string } }> } }[] = [];
       return {
         customers: vi.spyOn(stripe.customers, "create").mockImplementation((async () => ({ id: customerId() })) as never),
-        sessions: vi.spyOn(stripe.checkout.sessions, "create").mockImplementation((async () => {
-          const session = { id: `cs_${rand()}`, url: sessionUrl, mode: "subscription", line_items: { data: [{ price: { id: STRIPE_PRICE_ID } }] } };
+        sessions: vi.spyOn(stripe.checkout.sessions, "create").mockImplementation((async (args: { line_items: Array<{ price: string }> }) => {
+          const session = {
+            id: `cs_${rand()}`,
+            url: sessionUrl,
+            mode: "subscription",
+            line_items: { data: [{ price: { id: args.line_items[0]!.price } }] },
+          };
           openSessions.push(session);
           return session;
         }) as never),
@@ -397,8 +497,37 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
         portal: vi.spyOn(stripe.billingPortal.sessions, "create").mockResolvedValue({ url: "https://portal.test/p" } as never),
       };
     }
-    const checkout = async () => (await import("@/app/api/stripe/checkout/route")).POST();
+    const checkout = async (body?: unknown) => {
+      const request = new Request("http://x/api/stripe/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body ?? { tier: "pro", aiMode: "managed" }),
+      });
+      return (await import("@/app/api/stripe/checkout/route")).POST(request);
+    };
     const portal = async () => (await import("@/app/api/stripe/portal/route")).POST();
+
+    it.each([
+      [{ tier: "pro", aiMode: "byok" }, PRICE_IDS.proByok],
+      [{ tier: "pro", aiMode: "managed" }, PRICE_IDS.proManaged],
+      [{ tier: "ultra", aiMode: "byok" }, PRICE_IDS.ultraByok],
+      [{ tier: "ultra", aiMode: "managed" }, PRICE_IDS.ultraManaged],
+    ] as const)("resolves %o to configured price %s", async (variant, expectedPrice) => {
+      current = newOwner();
+      const s = await spies();
+      const { stripePriceFor } = await import("@/lib/stripe-prices");
+      expect(stripePriceFor(variant)).toBe(expectedPrice);
+
+      const first = await checkout(variant);
+      expect(first.status).toBe(200);
+      expect(await first.json()).toEqual({ url: sessionUrl });
+      const args = s.sessions.mock.calls[0][0] as Record<string, unknown>;
+      expect(args).toMatchObject({
+        mode: "subscription",
+        line_items: [{ price: expectedPrice, quantity: 1 }],
+        automatic_tax: { enabled: true },
+      });
+    });
 
     it("creates one Stripe customer per owner and reuses it afterwards", async () => {
       current = newOwner();
@@ -415,28 +544,49 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
 
       const stored = (await account(current.ownerId)).stripeCustomerId;
       expect(stored).toBeTruthy();
+      expect(await account(current.ownerId)).toMatchObject({ plan: "free", aiMode: null });
 
       await checkout();
       expect(s.customers).toHaveBeenCalledOnce();
       expect(s.sessions).toHaveBeenCalledOnce();
-      const { STRIPE_PRICE_ID } = await import("@/lib/stripe");
       const args = s.sessions.mock.calls[0][0] as Record<string, unknown>;
       expect(args).toMatchObject({
         mode: "subscription",
         customer: stored,
-        line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+        line_items: [{ price: PRICE_IDS.proManaged, quantity: 1 }],
         metadata: { ownerId: current.ownerId },
         subscription_data: { metadata: { ownerId: current.ownerId } },
+        automatic_tax: { enabled: true },
       });
       expect(String(args.success_url)).toMatch(/\/dashboard\?success=true$/);
       expect(String(args.cancel_url)).toMatch(/\/dashboard\?canceled=true$/);
+    });
+
+    it("rejects invalid or missing checkout variants", async () => {
+      current = newOwner();
+      const s = await spies();
+
+      const missing = await checkout({ tier: "pro" });
+      expect(missing.status).toBe(400);
+      expect(await missing.json()).toMatchObject({ code: "VALIDATION" });
+
+      const invalidTier = await checkout({ tier: "enterprise", aiMode: "managed" });
+      expect(invalidTier.status).toBe(400);
+      expect(await invalidTier.json()).toMatchObject({ code: "VALIDATION" });
+
+      const invalidMode = await checkout({ tier: "ultra", aiMode: "hybrid" });
+      expect(invalidMode.status).toBe(400);
+      expect(await invalidMode.json()).toMatchObject({ code: "VALIDATION" });
+
+      expect(s.sessions).not.toHaveBeenCalled();
+      expect(s.customers).not.toHaveBeenCalled();
     });
 
     it("creates only one open checkout session for concurrent requests", async () => {
       current = newOwner();
       const s = await spies();
 
-      const responses = await Promise.all([checkout(), checkout()]);
+      const responses = await Promise.all([checkout({ tier: "ultra", aiMode: "byok" }), checkout({ tier: "ultra", aiMode: "byok" })]);
 
       expect(responses.map((response) => response.status)).toEqual([200, 200]);
       expect(s.sessions).toHaveBeenCalledOnce();
@@ -451,19 +601,19 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
         data: [{ id: "cs_old", url: "https://checkout.test/old", mode: "subscription", line_items: { data: [{ price: { id: "price_old" } }] } }],
       } as never);
 
-      expect((await checkout()).status).toBe(200);
+      expect((await checkout({ tier: "pro", aiMode: "managed" })).status).toBe(200);
       expect(s.expire).toHaveBeenCalledWith("cs_old");
       expect(s.sessions).toHaveBeenCalledOnce();
     });
 
-    it("blocks owners that already have an active subscription", async () => {
+    it("blocks owners with active subscriptions and tells them to use the billing portal", async () => {
       current = newOwner();
       await seedAccount(current.ownerId, { plan: "pro", status: "active", stripeCustomerId: customerId() });
       const s = await spies();
 
-      const res = await checkout();
+      const res = await checkout({ tier: "ultra", aiMode: "managed" });
       expect(res.status).toBe(409);
-      expect(await res.json()).toMatchObject({ code: "ALREADY_SUBSCRIBED" });
+      expect(await res.json()).toMatchObject({ code: "BILLING_PORTAL_REQUIRED" });
       expect(s.sessions).not.toHaveBeenCalled();
       expect(s.customers).not.toHaveBeenCalled();
     });
@@ -474,7 +624,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       await seedAccount(current.ownerId, { plan: "free", status: "canceled", stripeCustomerId: existing });
       const s = await spies();
 
-      expect((await checkout()).status).toBe(200);
+      expect((await checkout({ tier: "ultra", aiMode: "managed" })).status).toBe(200);
       expect(s.customers).not.toHaveBeenCalled();
       expect((s.sessions.mock.calls[0][0] as { customer: string }).customer).toBe(existing);
     });
@@ -483,12 +633,12 @@ describe.skipIf(!process.env.DATABASE_URL)("Stripe billing (database)", () => {
       const org = newOwner(true);
       current = org;
       const s = await spies();
-      await checkout();
+      await checkout({ tier: "pro", aiMode: "managed" });
       expect((s.sessions.mock.calls[0][0] as { metadata: object }).metadata).toEqual({ ownerId: org.ownerId });
 
       current = { ...org, userId: `test_u_${rand()}`, orgRole: "org:member" };
       s.sessions.mockClear();
-      expect((await checkout()).status).toBe(403);
+      expect((await checkout({ tier: "pro", aiMode: "managed" })).status).toBe(403);
       expect((await portal()).status).toBe(403);
       expect(s.sessions).not.toHaveBeenCalled();
       expect(s.portal).not.toHaveBeenCalled();

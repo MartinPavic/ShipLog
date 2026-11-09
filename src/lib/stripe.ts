@@ -12,5 +12,3 @@ export function getStripe(): Stripe {
 export const stripe: Stripe = new Proxy({} as Stripe, {
   get: (_target, prop) => Reflect.get(getStripe(), prop),
 });
-
-export const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID!;

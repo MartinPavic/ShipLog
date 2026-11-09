@@ -3,11 +3,39 @@ import { randomUUID } from "node:crypto";
 import type Stripe from "stripe";
 import { getDb } from "@/db";
 import { billingAccounts, stripeEvents } from "@/db/schema";
-import { planFromStatus } from "@/lib/plans";
+import { entitlementForStripePrice } from "@/lib/stripe-prices";
 import { stripe } from "@/lib/stripe";
 
 const idOf = (ref: string | { id: string } | null | undefined) =>
   typeof ref === "string" ? ref : (ref?.id ?? null);
+
+function entitlementFromSubscription(sub: Stripe.Subscription): { plan: "free" | "pro" | "ultra"; aiMode: "byok" | "managed" | null } {
+  if (sub.status !== "active" && sub.status !== "trialing") {
+    return { plan: "free", aiMode: null };
+  }
+
+  const recurringPrices = sub.items.data
+    .map((item) => {
+      const price = item.price;
+      if (!price || price.type !== "recurring") return null;
+      return price.id;
+    })
+    .filter((priceId): priceId is string => Boolean(priceId));
+
+  const recognized = recurringPrices
+    .map((priceId) => entitlementForStripePrice(priceId))
+    .filter((entitlement): entitlement is NonNullable<ReturnType<typeof entitlementForStripePrice>> => entitlement !== null);
+
+  if (recognized.length !== 1) {
+    return { plan: "free", aiMode: null };
+  }
+
+  return { plan: recognized[0].tier, aiMode: recognized[0].aiMode };
+}
+
+async function retrieveCurrentSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
+  return stripe.subscriptions.retrieve(subscriptionId);
+}
 
 export async function processStripeEvent(event: Stripe.Event, claimToken: string): Promise<boolean> {
   let subscription: Stripe.Subscription | undefined;
@@ -24,9 +52,11 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
       break;
     }
     case "customer.subscription.updated":
-    case "customer.subscription.deleted":
-      subscription = event.data.object;
+    case "customer.subscription.deleted": {
+      const sub = event.data.object;
+      subscription = await retrieveCurrentSubscription(sub.id);
       break;
+    }
     case "invoice.payment_failed": {
       const invoice = event.data.object;
       const customerId = idOf(invoice.customer);
@@ -47,8 +77,10 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
 
     const saveSubscription = async (ownerId: string, sub: Stripe.Subscription) => {
       const periodEnd = sub.items.data[0]?.current_period_end;
+      const { plan, aiMode } = entitlementFromSubscription(sub);
       const values = {
-        plan: planFromStatus(sub.status),
+        plan,
+        aiMode,
         stripeCustomerId: idOf(sub.customer),
         stripeSubscriptionId: sub.id,
         status: sub.status,
@@ -72,7 +104,7 @@ export async function processStripeEvent(event: Stripe.Event, claimToken: string
     } else if (failedInvoice) {
       await tx
         .update(billingAccounts)
-        .set({ status: "past_due", plan: "free", updatedAt: new Date() })
+        .set({ status: "past_due", plan: "free", aiMode: null, updatedAt: new Date() })
         .where(and(eq(billingAccounts.stripeCustomerId, failedInvoice.customerId), eq(billingAccounts.stripeSubscriptionId, failedInvoice.subscriptionId)));
     }
     return true;

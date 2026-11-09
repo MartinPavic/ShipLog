@@ -250,7 +250,9 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
       const takeOver = await import("@/app/api/projects/[id]/take-over/route");
       await denied(takeOver.POST(req("POST"), ctx(ids.team)));
 
-      await denied((await import("@/app/api/stripe/checkout/route")).POST());
+      await denied(
+        (await import("@/app/api/stripe/checkout/route")).POST(req("POST", { tier: "pro", aiMode: "managed" }))
+      );
       await denied((await import("@/app/api/stripe/portal/route")).POST());
 
       // The AI key is untouched.

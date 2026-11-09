@@ -1,17 +1,26 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getDb } from "@/db";
 import { billingAccounts } from "@/db/schema";
-import { ApiError, handle } from "@/lib/api";
+import { ApiError, handle, parseBody } from "@/lib/api";
 import { appUrl } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/owner";
-import { assertFeatureEnabled, planFromStatus } from "@/lib/plans";
-import { STRIPE_PRICE_ID, stripe } from "@/lib/stripe";
+import { assertFeatureEnabled } from "@/lib/plans";
+import { stripePriceFor } from "@/lib/stripe-prices";
+import { stripe } from "@/lib/stripe";
+
+const checkoutBodySchema = z.object({
+  tier: z.enum(["pro", "ultra"]),
+  aiMode: z.enum(["byok", "managed"]),
+});
 
 
-export const POST = handle(async () => {
+export const POST = handle(async (req: Request) => {
   assertFeatureEnabled("billing");
+  const variant = await parseBody(req, checkoutBodySchema);
+  const priceId = stripePriceFor(variant);
   const owner = await requireAdmin();
   const db = getDb();
 
@@ -23,8 +32,12 @@ export const POST = handle(async () => {
       .where(eq(billingAccounts.ownerId, owner.ownerId))
       .limit(1);
 
-    if (account && planFromStatus(account.status) === "pro") {
-      throw new ApiError(409, "You already have an active subscription.", "ALREADY_SUBSCRIBED");
+    if (account && (account.status === "active" || account.status === "trialing")) {
+      throw new ApiError(
+        409,
+        "You already have an active subscription. Use the billing portal to change plan or AI mode.",
+        "BILLING_PORTAL_REQUIRED"
+      );
     }
 
     let customerId = account?.stripeCustomerId;
@@ -43,7 +56,7 @@ export const POST = handle(async () => {
 
     const openSessions = (await stripe.checkout.sessions.list({ customer: customerId, status: "open", limit: 10, expand: ["data.line_items"] })).data;
     const matching = openSessions.find(
-      (candidate) => candidate.mode === "subscription" && candidate.line_items?.data?.some((item) => item.price?.id === STRIPE_PRICE_ID)
+      (candidate) => candidate.mode === "subscription" && candidate.line_items?.data?.some((item) => item.price?.id === priceId)
     );
     if (matching?.url) return matching;
     await Promise.all(openSessions.map((candidate) => stripe.checkout.sessions.expire(candidate.id)));
@@ -51,7 +64,8 @@ export const POST = handle(async () => {
     return stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
+      automatic_tax: { enabled: true },
       success_url: `${appUrl()}/dashboard?success=true`,
       cancel_url: `${appUrl()}/dashboard?canceled=true`,
       metadata: { ownerId: owner.ownerId },
