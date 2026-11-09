@@ -17,12 +17,13 @@ Discord or email, manually or on a schedule.
 - **Teams** (Pro): Clerk Organizations with admin and member roles. Billing is flat per organization.
 - **Billing**: Stripe subscriptions with a customer portal. Switch it off entirely with `BILLING_ENABLED=false`.
 
-| | Free | Pro |
-| --- | --- | --- |
-| Projects | 1 | Unlimited |
-| Generations per month | 5 (your own key) | 200 managed AI, unlimited with your own key |
-| History | 10 newest logs per project | Full |
-| Delivery, scheduling, PDF, teams | No | Yes |
+| | Free | Pro (BYOK / Managed) | Ultra (BYOK / Managed) |
+| --- | --- | --- | --- |
+| Projects | 1 | 5 | Unlimited |
+| BYOK generations per month | 5 | 50 / 0 | Unlimited / 0 |
+| Managed-AI generations per month | 0 | 0 / 50 | 0 / 200 |
+| History | 10 newest logs per project | Full | Full |
+| Delivery, scheduling, PDF, teams | No | Yes | Yes |
 
 Limits live in [`src/lib/plans.ts`](src/lib/plans.ts).
 

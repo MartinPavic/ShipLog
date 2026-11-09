@@ -52,6 +52,30 @@ describe("documentation", () => {
     expect(missing).toEqual([]);
   });
 
+  it("documents four Stripe price IDs and tax-inclusive setup", () => {
+    const configuration = read("docs/configuration.md");
+    const services = read("docs/services.md");
+    const setup = read("scripts/setup.ts");
+
+    for (const name of [
+      "STRIPE_PRICE_PRO_BYOK_ID",
+      "STRIPE_PRICE_PRO_MANAGED_ID",
+      "STRIPE_PRICE_ULTRA_BYOK_ID",
+      "STRIPE_PRICE_ULTRA_MANAGED_ID",
+    ]) {
+      expect(configuration).toContain(name);
+      expect(services).toContain(name);
+      expect(setup).toContain(name);
+    }
+
+    expect(configuration).not.toContain("STRIPE_PRICE_ID");
+    expect(services).not.toContain("STRIPE_PRICE_ID");
+    expect(setup).not.toContain("STRIPE_PRICE_ID");
+    expect(services.toLowerCase()).toContain("vat-inclusive");
+    expect(services.toLowerCase()).toContain("inclusive");
+    expect(services.toLowerCase()).toContain("automatic tax");
+  });
+
   it("documents every environment variable the validator and flags know about", () => {
     const documented = read("docs/configuration.md");
     const source = read("src/env.ts");

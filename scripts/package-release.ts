@@ -70,7 +70,10 @@ const DUMMY_ENV = {
   GITHUB_CLIENT_ID: "dummy",
   GITHUB_CLIENT_SECRET: "dummy",
   STRIPE_SECRET_KEY: "sk_test_dummy",
-  STRIPE_PRICE_ID: "price_dummy",
+  STRIPE_PRICE_PRO_BYOK_ID: "price_pro_byok_dummy",
+  STRIPE_PRICE_PRO_MANAGED_ID: "price_pro_managed_dummy",
+  STRIPE_PRICE_ULTRA_BYOK_ID: "price_ultra_byok_dummy",
+  STRIPE_PRICE_ULTRA_MANAGED_ID: "price_ultra_managed_dummy",
   STRIPE_WEBHOOK_SECRET: "whsec_dummy",
   CRON_SECRET: "release-smoke-secret-0123456789",
 };

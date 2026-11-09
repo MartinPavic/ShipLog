@@ -15,6 +15,12 @@ follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- Billing configuration now requires four Stripe price IDs when `BILLING_ENABLED=true`: `STRIPE_PRICE_PRO_BYOK_ID`,
+  `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, and `STRIPE_PRICE_ULTRA_MANAGED_ID`. The legacy
+  single-price variable is no longer used by setup, validation, CI defaults, or release smoke checks.
+- Billing docs and setup now describe the three-tier offer (Free, Pro, Ultra), VAT-inclusive display prices, Stripe Tax
+  automatic tax plus tax registrations, and customer-portal switching across all four paid prices.
+
 - Ship logs describe what changed in plain language instead of repeating commit titles. The model now also receives full
   commit messages, longer pull request descriptions and, for the newest pull requests and commits, the changed file names
   and short excerpts of added code. The Privacy template mentions this.

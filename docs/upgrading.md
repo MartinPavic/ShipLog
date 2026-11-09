@@ -25,6 +25,10 @@ The GitLab integration adds workspace OAuth configuration and member connection 
 without a provider continue to use GitHub; no repository data backfill is required. After applying the migration, a
 workspace admin can configure GitLab in Settings and members can connect their accounts.
 
+The three-tier billing update requires setting four Stripe price IDs when billing is enabled:
+`STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, and
+`STRIPE_PRICE_ULTRA_MANAGED_ID`. Legacy single-price mappings no longer grant paid entitlements.
+
 ## Tips
 
 - Keep your changes small and in the files above, and put new behavior in new files. That makes the next upgrade a

@@ -21,8 +21,9 @@ your README or listing. Or deploy by hand:
 
 - [ ] **Clerk:** use a production instance and its keys; add your domain; enable Organizations if you use Teams.
 - [ ] **GitHub:** a separate OAuth app whose callback URL is `https://your-domain/api/github/callback`.
-- [ ] **Stripe:** live keys and price, a webhook endpoint for `https://your-domain/api/webhooks/stripe` with the four
-      events listed in [Service setup](services.md#stripe-optional), and the customer portal enabled.
+- [ ] **Stripe:** live keys, four paid price IDs (Pro/Ultra x BYOK/Managed), a webhook endpoint for
+      `https://your-domain/api/webhooks/stripe` with the four events listed in [Service setup](services.md#stripe-optional),
+      Stripe Tax automatic tax plus tax registrations enabled, and the customer portal configured to switch across all four prices.
 - [ ] **Database:** run migrations (below). Use the pooled URL for `DATABASE_URL`.
 - [ ] **Secrets:** a new `ENCRYPTION_KEY` for production, stored somewhere safe. Never reuse the development one.
 - [ ] **Cron:** `CRON_SECRET` set on the host.

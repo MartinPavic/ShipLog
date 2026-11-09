@@ -36,6 +36,15 @@ The webhook is not reaching the app. Locally, keep `stripe listen --forward-to l
 running and use its signing secret as `STRIPE_WEBHOOK_SECRET`. In production, check the endpoint URL, that the four
 events are selected, and the delivery log in the Stripe dashboard.
 
+**Billing is enabled, but startup says a Stripe variable is missing.**
+Set all four price IDs (`STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`,
+`STRIPE_PRICE_ULTRA_MANAGED_ID`) plus `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. With
+`BILLING_ENABLED=false`, none of those Stripe variables is required.
+
+**A subscription exists in Stripe, but the workspace still looks Free.**
+The subscription item price does not match one of the four configured price IDs. Legacy single-price mappings are
+ignored by entitlement logic in the three-tier setup.
+
 **Scheduled logs never run.**
 Check that `CRON_SECRET` is set, that something calls the cron endpoint hourly, and that the project's schedule is
 enabled. The project's Settings tab shows the last run and why it was skipped. The project creator's GitHub or GitLab

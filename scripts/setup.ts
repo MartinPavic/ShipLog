@@ -66,7 +66,9 @@ function manualSteps(env: Record<string, string | undefined>): string[] {
   if (!off("TEAMS_ENABLED")) steps.push("Clerk: enable Organizations (dashboard, Configure, Organizations) to use Teams");
   if (!off("BILLING_ENABLED")) {
     steps.push(`Stripe: run "stripe listen --forward-to ${appUrl}/api/webhooks/stripe" and put its signing secret in STRIPE_WEBHOOK_SECRET`);
-    steps.push("Stripe: enable the customer portal so \"Manage billing\" works");
+    steps.push("Stripe: create four monthly recurring VAT-inclusive prices (Pro BYOK, Pro Managed AI, Ultra BYOK, Ultra Managed AI) and set their IDs locally");
+    steps.push("Stripe: enable automatic tax, add tax registrations, and verify each price uses inclusive tax behavior");
+    steps.push("Stripe: enable the customer portal and allow switching across all four paid prices");
   }
   if (!off("SCHEDULING_ENABLED")) steps.push("Deployment: set CRON_SECRET on your host; vercel.json already schedules the cron job");
   steps.push("Optional: edit src/config/site.ts (name, copy, price display) and the legal pages");
@@ -156,7 +158,10 @@ async function interactive() {
     if (billing) {
       await group("Stripe", "https://dashboard.stripe.com, test mode is fine to start.", [
         ["STRIPE_SECRET_KEY", "Secret key"],
-        ["STRIPE_PRICE_ID", "Pro price id (price_...)"],
+        ["STRIPE_PRICE_PRO_BYOK_ID", "Pro BYOK monthly price id (price_...)"],
+        ["STRIPE_PRICE_PRO_MANAGED_ID", "Pro Managed AI monthly price id (price_...)"],
+        ["STRIPE_PRICE_ULTRA_BYOK_ID", "Ultra BYOK monthly price id (price_...)"],
+        ["STRIPE_PRICE_ULTRA_MANAGED_ID", "Ultra Managed AI monthly price id (price_...)"],
         ["STRIPE_WEBHOOK_SECRET", "Webhook signing secret (whsec_..., from `stripe listen`)"],
       ]);
     }

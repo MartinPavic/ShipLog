@@ -23,6 +23,7 @@ npm run dev
 2. generates `ENCRYPTION_KEY` and `CRON_SECRET`,
 3. asks for each service's credentials; press Enter to skip any step,
 4. asks whether you want billing and whether to use demo AI,
+	billing setup now asks for four Stripe monthly price IDs (Pro/Ultra, BYOK/Managed AI),
 5. checks the database connection and applies the migrations,
 6. prints what is still left to do by hand.
 

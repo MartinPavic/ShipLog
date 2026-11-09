@@ -64,25 +64,30 @@ requests per member per hour.
 
 Skip this if you set `BILLING_ENABLED=false`.
 
-1. Create a recurring **price** for Pro and copy its id.
-2. Forward webhooks while developing, and use the printed signing secret:
+1. Create four monthly recurring prices and copy each id:
+   - Pro BYOK: EUR 12/month
+   - Pro Managed AI: EUR 19/month
+   - Ultra BYOK: EUR 22/month
+   - Ultra Managed AI: EUR 29/month
+2. For each price, set tax behavior to **inclusive** (VAT-inclusive display and checkout).
+3. Enable **Stripe Tax** automatic tax and add your required tax registrations before going live.
+4. Forward webhooks while developing, and use the printed signing secret:
 
    ```bash
    stripe listen --forward-to localhost:3000/api/webhooks/stripe
    ```
 
-3. Enable the **customer portal** in the Stripe dashboard so "Manage billing" works.
-4. Try the lifecycle with `stripe trigger checkout.session.completed`, `customer.subscription.deleted` and
+4. Enable the **customer portal** in the Stripe dashboard so "Manage billing" works, and allow switching across all four prices.
+5. Try the lifecycle with `stripe trigger checkout.session.completed`, `customer.subscription.deleted` and
    `invoice.payment_failed`. Events are processed once per id, so replays are safe.
 
 In production, add a webhook endpoint for `<APP_URL>/api/webhooks/stripe` with these events:
 `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` and
 `invoice.payment_failed`.
 
-The price shown on the landing page comes from `src/config/site.ts` and is display only; the amount charged is the
-Stripe price. Keep them in sync.
+The landing page prices are VAT-inclusive display values. Keep them aligned with the four Stripe prices above.
 
-Variables: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`.
+Variables: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, `STRIPE_PRICE_ULTRA_MANAGED_ID`.
 
 ## Resend (optional)
 
@@ -94,7 +99,8 @@ Variables: `RESEND_API_KEY`, `RESEND_FROM`.
 
 ## OpenAI for managed AI (optional)
 
-On the Pro plan, workspaces without their own key use the server's OpenAI key (200 generations a month by default).
+On managed paid plans, workspaces without their own key use the server's OpenAI key (50 generations on Pro Managed AI,
+200 on Ultra Managed AI by default).
 Set `MANAGED_AI_ENABLED=false` to never use it. Free workspaces always bring their own key.
 
 Variable: `OPENAI_API_KEY`.

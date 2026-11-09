@@ -69,7 +69,10 @@ export function validateEnv(env: Env = process.env, production = env.NODE_ENV ==
   if (production) shape.NEXT_PUBLIC_APP_URL = z.url({ error: "NEXT_PUBLIC_APP_URL must be the public https URL of the app" });
   if (on.billing) {
     shape.STRIPE_SECRET_KEY = required("STRIPE_SECRET_KEY is required when BILLING_ENABLED is on");
-    shape.STRIPE_PRICE_ID = required("STRIPE_PRICE_ID is required when BILLING_ENABLED is on");
+    shape.STRIPE_PRICE_PRO_BYOK_ID = required("STRIPE_PRICE_PRO_BYOK_ID is required when BILLING_ENABLED is on");
+    shape.STRIPE_PRICE_PRO_MANAGED_ID = required("STRIPE_PRICE_PRO_MANAGED_ID is required when BILLING_ENABLED is on");
+    shape.STRIPE_PRICE_ULTRA_BYOK_ID = required("STRIPE_PRICE_ULTRA_BYOK_ID is required when BILLING_ENABLED is on");
+    shape.STRIPE_PRICE_ULTRA_MANAGED_ID = required("STRIPE_PRICE_ULTRA_MANAGED_ID is required when BILLING_ENABLED is on");
     shape.STRIPE_WEBHOOK_SECRET = required("STRIPE_WEBHOOK_SECRET is required when BILLING_ENABLED is on");
   }
   if (on.scheduling) {

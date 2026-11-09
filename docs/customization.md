@@ -45,12 +45,14 @@ Code identifiers such as the `shipLogs` table are internal and do not need to ch
 
 - **Limits:** edit `PLAN_LIMITS` in [`src/lib/plans.ts`](../src/lib/plans.ts). They are enforced on the server, and the
   pricing section on the landing page is generated from them.
-- **Price:** create the Stripe price, set `STRIPE_PRICE_ID`, and update `pricing` in `site.ts` so the page matches.
+- **Price:** create the four Stripe monthly prices (Pro/Ultra x BYOK/Managed), set
+  `STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`,
+  and `STRIPE_PRICE_ULTRA_MANAGED_ID`, then keep `pricing` in `site.ts` aligned with those VAT-inclusive amounts.
 - **No paywall at all:** set `BILLING_ENABLED=false`.
 - **Switch features off:** use the [feature flags](configuration.md#feature-flags).
 
-Before fixing the managed-AI cap, check what a generation costs you with your chosen model; the default is 200 a
-month per Pro workspace.
+Before changing managed-AI caps, check what a generation costs you with your chosen model; defaults are 50/month on
+Pro Managed AI and 200/month on Ultra Managed AI.
 
 ## Templates
 

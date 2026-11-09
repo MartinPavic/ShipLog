@@ -10,7 +10,10 @@ const complete = () => ({
   GITHUB_CLIENT_ID: "id",
   GITHUB_CLIENT_SECRET: "secret",
   STRIPE_SECRET_KEY: "sk_test_x",
-  STRIPE_PRICE_ID: "price_x",
+  STRIPE_PRICE_PRO_BYOK_ID: "price_pro_byok_x",
+  STRIPE_PRICE_PRO_MANAGED_ID: "price_pro_managed_x",
+  STRIPE_PRICE_ULTRA_BYOK_ID: "price_ultra_byok_x",
+  STRIPE_PRICE_ULTRA_MANAGED_ID: "price_ultra_managed_x",
   STRIPE_WEBHOOK_SECRET: "whsec_x",
   CRON_SECRET: "a-sufficiently-long-secret",
   OPENAI_API_KEY: "sk-x",
@@ -85,7 +88,10 @@ describe("validateEnv", () => {
       "GITHUB_CLIENT_ID",
       "GITHUB_CLIENT_SECRET",
       "STRIPE_SECRET_KEY",
-      "STRIPE_PRICE_ID",
+      "STRIPE_PRICE_PRO_BYOK_ID",
+      "STRIPE_PRICE_PRO_MANAGED_ID",
+      "STRIPE_PRICE_ULTRA_BYOK_ID",
+      "STRIPE_PRICE_ULTRA_MANAGED_ID",
       "STRIPE_WEBHOOK_SECRET",
       "CRON_SECRET",
     ]) {
@@ -108,10 +114,13 @@ describe("validateEnv", () => {
   it("drops the requirements of switched-off features", () => {
     const base = complete();
     delete (base as Partial<typeof base>).STRIPE_SECRET_KEY;
-    delete (base as Partial<typeof base>).STRIPE_PRICE_ID;
+    delete (base as Partial<typeof base>).STRIPE_PRICE_PRO_BYOK_ID;
+    delete (base as Partial<typeof base>).STRIPE_PRICE_PRO_MANAGED_ID;
+    delete (base as Partial<typeof base>).STRIPE_PRICE_ULTRA_BYOK_ID;
+    delete (base as Partial<typeof base>).STRIPE_PRICE_ULTRA_MANAGED_ID;
     delete (base as Partial<typeof base>).STRIPE_WEBHOOK_SECRET;
     delete (base as Partial<typeof base>).CRON_SECRET;
-    expect(validateEnv(base, true).errors).toHaveLength(4);
+    expect(validateEnv(base, true).errors).toHaveLength(7);
     expect(validateEnv({ ...base, BILLING_ENABLED: "false" }, true).errors).toHaveLength(1);
     expect(validateEnv({ ...base, BILLING_ENABLED: "false", SCHEDULING_ENABLED: "false" }, true).errors).toEqual([]);
   });

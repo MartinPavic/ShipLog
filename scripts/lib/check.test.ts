@@ -14,7 +14,10 @@ const validEnv = () => ({
   GITHUB_CLIENT_ID: "id",
   GITHUB_CLIENT_SECRET: "secret",
   STRIPE_SECRET_KEY: "sk_test_x",
-  STRIPE_PRICE_ID: "price_x",
+  STRIPE_PRICE_PRO_BYOK_ID: "price_pro_byok_x",
+  STRIPE_PRICE_PRO_MANAGED_ID: "price_pro_managed_x",
+  STRIPE_PRICE_ULTRA_BYOK_ID: "price_ultra_byok_x",
+  STRIPE_PRICE_ULTRA_MANAGED_ID: "price_ultra_managed_x",
   STRIPE_WEBHOOK_SECRET: "whsec_x",
   CRON_SECRET: "a-sufficiently-long-secret",
 });
