@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const routeState = vi.hoisted(() => ({
   owner: { ownerId: "org-route-test", userId: "user-route-test", orgId: "org-route-test", orgRole: "org:admin" },
@@ -26,6 +26,7 @@ vi.mock("@/lib/gitlab-oauth", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://shiplog.example/");
   process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
   routeState.cookieState = "";
   routeState.getInstanceStatus.mockReset();
@@ -35,6 +36,8 @@ beforeEach(() => {
   routeState.saveTokenSet.mockReset();
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("GitLab OAuth routes", () => {
   it("starts authorization with the exact callback URI and a bound HTTP-only state cookie", async () => {
     routeState.getInstanceStatus.mockResolvedValue({ baseUrl: "https://gitlab.example.com/base", clientId: "client-id", configured: true });
@@ -42,7 +45,7 @@ describe("GitLab OAuth routes", () => {
     const response = await GET();
     const authorize = new URL(response.headers.get("location")!);
     expect(authorize.origin + authorize.pathname).toBe("https://gitlab.example.com/base/oauth/authorize");
-    expect(authorize.searchParams.get("redirect_uri")).toBe("http://localhost:3000/api/gitlab/callback");
+    expect(authorize.searchParams.get("redirect_uri")).toBe("https://shiplog.example/api/gitlab/callback");
     const cookie = response.headers.get("set-cookie") ?? "";
     const state = cookie.match(/gl_oauth_state=([^;]+)/)?.[1];
     expect(state).toBeTruthy();

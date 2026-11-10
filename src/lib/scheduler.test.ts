@@ -160,9 +160,16 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
   const emails = () => calls.filter((c) => c.url.includes("api.resend.com"));
 
   beforeAll(() => {
-    savedEnv = { RESEND_API_KEY: process.env.RESEND_API_KEY, RESEND_FROM: process.env.RESEND_FROM };
+    savedEnv = {
+      RESEND_API_KEY: process.env.RESEND_API_KEY,
+      RESEND_FROM: process.env.RESEND_FROM,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      AI_PROVIDER: process.env.AI_PROVIDER,
+    };
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.RESEND_FROM = "ShipLog <noreply@example.com>";
+    process.env.OPENAI_API_KEY = "sk-test-server";
+    process.env.AI_PROVIDER = "live";
   });
   beforeEach(stubFetch);
   afterEach(() => vi.unstubAllGlobals());
