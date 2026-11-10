@@ -78,7 +78,7 @@ Skip this if you set `BILLING_ENABLED=false`.
    ```
 
 5. Enable the **customer portal** in the Stripe dashboard so "Manage billing" works, and allow switching across all four prices.
-5. Try the lifecycle with `stripe trigger checkout.session.completed`, `customer.subscription.deleted` and
+6. Try the lifecycle with `stripe trigger checkout.session.completed`, `customer.subscription.deleted` and
    `invoice.payment_failed`. Events are processed once per id, so replays are safe.
 
 In production, add a webhook endpoint for `<APP_URL>/api/webhooks/stripe` with these events:
