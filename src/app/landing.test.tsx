@@ -33,6 +33,7 @@ describe("landing page", () => {
     expect(out).toContain(`mailto:${siteConfig.supportEmail}`);
     expect(out).toContain('href="/terms"');
     expect(out).toContain('href="/privacy"');
+    expect(out).toContain("Microsoft Teams");
   });
 
   it("shows a clearly fictional report sample for clients and internal teams before feature and pricing details", () => {

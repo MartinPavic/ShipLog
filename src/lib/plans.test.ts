@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_LIMITS, limitsFor, planFromStatus } from "./plans";
+import { PLAN_LIMITS, limitsFor, planFromStatus, planHighlights } from "./plans";
 
 describe("planFromStatus", () => {
   it.each(["active", "trialing"])("%s is pro", (status) => {
@@ -60,5 +60,13 @@ describe("limitsFor paid variants", () => {
         teams: true,
       });
     }
+  });
+
+  it("includes Microsoft Teams in paid delivery highlights", () => {
+    const pro = planHighlights("pro", "managed").join(" ");
+    const ultra = planHighlights("ultra", "managed").join(" ");
+
+    expect(pro).toContain("Microsoft Teams");
+    expect(ultra).toContain("Microsoft Teams");
   });
 });

@@ -128,6 +128,12 @@ describe("documentation", () => {
     expect(read("docs/configuration.md")).toContain("not Microsoft Teams");
 
     const customization = read("docs/customization.md");
+    expect(customization).toContain("src/db/schema.ts");
+    expect(customization).toContain("ChannelKind");
+    expect(customization).toContain("isAllowedWebhook");
+    expect(customization.toLowerCase()).toContain("validation");
+    expect(customization.toLowerCase()).toContain("sender");
+    expect(customization.toLowerCase()).toContain("form");
     expect(customization).toContain("delivery_channels.kind");
     expect(customization.toLowerCase()).toContain("plain text");
     expect(customization.toLowerCase()).toContain("no sql enum migration");

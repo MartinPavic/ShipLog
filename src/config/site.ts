@@ -47,7 +47,7 @@ export const siteConfig = {
     },
     {
       title: "Share and deliver",
-      body: "Edit the result, share a read-only link, publish a changelog, or send it to Slack, Discord and email on a schedule.",
+      body: "Edit the result, share a read-only link, publish a changelog, or send it to Slack, Discord, Microsoft Teams and email on a schedule.",
     },
   ],
   faq: [

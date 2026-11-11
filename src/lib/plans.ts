@@ -145,7 +145,7 @@ export async function getPlanLimits(ownerId: string) {
 }
 
 const FEATURE_LABELS = {
-  delivery: "Delivery to Slack, Discord and email",
+  delivery: "Delivery to Slack, Discord, Microsoft Teams and email",
   scheduling: "Scheduled logs",
   pdfExport: "PDF export",
   teams: "Teams",
@@ -196,7 +196,9 @@ export function planHighlights(plan: Plan, aiMode: AiMode = "managed"): string[]
         ? [`${l.managedGenerationsPerMonth} managed-AI generations / month`]
         : []),
       "Full history",
-      ...(l.scheduling || l.delivery ? ["Scheduled logs and delivery to Slack, Discord and email"] : []),
+      ...(l.scheduling || l.delivery
+        ? ["Scheduled logs and delivery to Slack, Discord, Microsoft Teams and email"]
+        : []),
       ...(l.pdfExport ? ["PDF export"] : []),
       ...(l.teams ? ["Teams with organizations"] : []),
     ];
@@ -208,7 +210,9 @@ export function planHighlights(plan: Plan, aiMode: AiMode = "managed"): string[]
       ? [`${l.managedGenerationsPerMonth} managed-AI generations / month`]
       : []),
     "Full history",
-    ...(l.scheduling || l.delivery ? ["Scheduled logs and delivery to Slack, Discord and email"] : []),
+    ...(l.scheduling || l.delivery
+      ? ["Scheduled logs and delivery to Slack, Discord, Microsoft Teams and email"]
+      : []),
     ...(l.pdfExport ? ["PDF export"] : []),
     ...(l.teams ? ["Teams with organizations"] : []),
   ];
