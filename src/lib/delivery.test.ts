@@ -593,6 +593,28 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       });
     });
 
+    it("records failed and unknown Teams statuses in manual delivery history", async () => {
+      await withTeamsChannel(async (channelId) => {
+        const log = await insertLog();
+
+        behaviour[TEAMS_HOST] = () => new Response("gone", { status: 404 });
+        const failed = await (await deliver(log.id, { channelIds: [channelId] })).json();
+        expect(failed.results).toMatchObject([{ kind: "teams", status: "failed" }]);
+
+        behaviour[TEAMS_HOST] = () => {
+          throw new Error("connection reset after request");
+        };
+        const unknown = await (await deliver(log.id, { channelIds: [channelId] })).json();
+        expect(unknown.results).toMatchObject([{ kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." }]);
+
+        const { listDeliveries } = await import("./delivery");
+        expect(await listDeliveries(log.id)).toMatchObject([
+          { kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." },
+          { kind: "teams", status: "failed" },
+        ]);
+      });
+    });
+
     it("rejects redirects and treats timeouts and network errors as unknown", async () => {
       await withTeamsChannel(async (channelId) => {
         const log = await insertLog();
@@ -618,6 +640,27 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
         sendMessage("teams", { webhookUrl: "https://evil.example.com/x?sig=SECRETTEAMSSIG_abc" }, { title: "t", markdown: "m" })
       ).rejects.toMatchObject({ message: "This webhook URL is not allowed." });
       expect(calls).toHaveLength(0);
+    });
+
+    it("sends a Teams test message through the same sender and maps failures", async () => {
+      const { POST } = await import("@/app/api/projects/[id]/channels/[channelId]/test/route");
+      const test = (channelId: string) => POST(new Request("http://x", { method: "POST" }), ctx(ids.project, channelId));
+
+      await withTeamsChannel(async (channelId) => {
+        const ok = await test(channelId);
+        expect(ok.status).toBe(200);
+
+        const sent = calls.at(-1)!;
+        expect(sent.url).toBe(TEAMS);
+        const payload = teamsBody(sent);
+        expect(payload.type).toBe("message");
+        expect(payload.attachments[0].content.body[0].text).toContain("ShipLog test message");
+
+        behaviour[TEAMS_HOST] = () => new Response("", { status: 404 });
+        const failed = await test(channelId);
+        expect(failed.status).toBe(502);
+        expect(await failed.json()).toMatchObject({ code: "DELIVERY_FAILED" });
+      });
     });
   });
 });

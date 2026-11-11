@@ -20,6 +20,8 @@ vi.mock("@/lib/gitlab", async (importOriginal) => ({
 
 const rand = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const SLACK = "https://hooks.slack.com/services/T0AAAA/B0BBBB/secretslacktoken1234";
+const TEAMS_HOST = "prod-12.westus.logic.azure.com";
+const TEAMS = `https://${TEAMS_HOST}:443/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
 
 // Wednesday 10:30 UTC; the schedule fires on Wednesdays from 09:00 UTC.
 const WEDNESDAY = new Date("2026-10-14T10:30:00Z");
@@ -32,6 +34,7 @@ let calls: { url: string; body: unknown }[];
 let activity: unknown[];
 let ai: () => Response;
 let slack: () => Response;
+let teams: () => Response;
 let savedEnv: Record<string, string | undefined>;
 
 function stubFetch() {
@@ -48,6 +51,7 @@ function stubFetch() {
   ];
   ai = () => new Response(JSON.stringify({ choices: [{ message: { content: "Weekly summary text" } }] }));
   slack = () => new Response("ok");
+  teams = () => new Response(null, { status: 202 });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -61,6 +65,7 @@ function stubFetch() {
       if (u.hostname === "api.github.com") return new Response(JSON.stringify(u.pathname.endsWith("/commits") ? activity : []));
       if (u.hostname === "api.openai.com") return ai();
       if (u.hostname === "hooks.slack.com") return slack();
+      if (u.hostname === TEAMS_HOST) return teams();
       if (u.hostname === "api.resend.com") return new Response(JSON.stringify({ id: "em_1" }));
       throw new Error(`Unexpected request to ${url}`);
     })
@@ -78,6 +83,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     provider?: "github" | "gitlab";
     ai?: boolean;
     channel?: boolean;
+    channelKind?: "slack" | "teams";
     schedule?: object;
   } = {}): Promise<Fx> {
     const {
@@ -88,6 +94,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
       provider = "github",
       ai: withAi = true,
       channel = true,
+      channelKind = "slack",
     } = opts;
     const { getDb } = await import("@/db");
     const { aiCredentials, billingAccounts, deliveryChannels } = await import("@/db/schema");
@@ -128,8 +135,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     if (channel) {
       await db.insert(deliveryChannels).values({
         projectId: project.id,
-        kind: "slack",
-        encryptedConfig: encrypt(JSON.stringify({ webhookUrl: SLACK })),
+        kind: channelKind,
+        encryptedConfig: encrypt(JSON.stringify({ webhookUrl: channelKind === "teams" ? TEAMS : SLACK })),
       });
     }
     fixtures.push(fx);
@@ -444,6 +451,44 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const noChannels = await setup({ channel: false });
     expect(await run(noChannels)).toMatchObject({ generated: 1 });
     expect((await runRow(noChannels)).error).toContain("No enabled delivery channels");
+  });
+
+  it("records sent Teams scheduled deliveries", async () => {
+    const fx = await setup({ channelKind: "teams" });
+    expect(await run(fx)).toMatchObject({ generated: 1, failed: 0, skipped: 0 });
+
+    const [log] = await logsOf(fx);
+    const { listDeliveries } = await import("./delivery");
+    expect(await listDeliveries(log.id)).toMatchObject([{ kind: "teams", status: "sent", error: null }]);
+    expect(calls.filter((call) => call.url === TEAMS)).toHaveLength(1);
+  });
+
+  it("records failed Teams scheduled deliveries", async () => {
+    const fx = await setup({ channelKind: "teams" });
+    teams = () => new Response("gone", { status: 404 });
+
+    expect(await run(fx)).toMatchObject({ generated: 1, failed: 0, skipped: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "done", error: "1 of 1 deliveries failed." });
+
+    const [log] = await logsOf(fx);
+    const { listDeliveries } = await import("./delivery");
+    expect(await listDeliveries(log.id)).toMatchObject([{ kind: "teams", status: "failed" }]);
+  });
+
+  it("records unknown Teams scheduled deliveries", async () => {
+    const fx = await setup({ channelKind: "teams" });
+    teams = () => {
+      throw new Error("connection reset after request");
+    };
+
+    expect(await run(fx)).toMatchObject({ generated: 1, failed: 0, skipped: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "done", error: "1 of 1 deliveries failed." });
+
+    const [log] = await logsOf(fx);
+    const { listDeliveries } = await import("./delivery");
+    expect(await listDeliveries(log.id)).toMatchObject([
+      { kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." },
+    ]);
   });
 
   it("uses the schedule's period length", async () => {
