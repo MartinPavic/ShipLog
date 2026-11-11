@@ -318,9 +318,33 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect(await run(fx)).toMatchObject({ skipped: 1, retry: 0, generated: 0 });
     expect(await runRow(fx)).toMatchObject({ status: "skipped" });
     expect((await runRow(fx)).error).toContain("Sentry redirected the request");
+    expect((await runRow(fx)).error).toContain("organization slug");
+    expect((await runRow(fx)).error).toContain("Reconnect Sentry in Settings");
     expect(emails()).toHaveLength(1);
     expect(await usage(fx)).toBe(0);
     expect(await logsOf(fx)).toHaveLength(0);
+  });
+
+  it("skips and notifies when Sentry project listing exceeds the page limit, without charging usage", async () => {
+    const fx = await setup({ sentry: true });
+    let page = 0;
+    sentry = (url) => {
+      if (!url.pathname.endsWith("/projects/")) return sentryOk(url);
+      page += 1;
+      return new Response(JSON.stringify([{ id: String(page), slug: `proj-${page}`, name: `Project ${page}` }]), {
+        headers: {
+          link: `<https://sentry.io/api/0/organizations/acme/projects/?cursor=0:${page * 100}:0>; rel=\"next\"; results=\"true\"; cursor=\"0:${page * 100}:0\"`,
+        },
+      });
+    };
+
+    expect(await run(fx)).toMatchObject({ skipped: 1, retry: 0, generated: 0, failed: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "skipped" });
+    expect((await runRow(fx)).error).toContain("more than 1000 projects");
+    expect(emails()).toHaveLength(1);
+    expect(await usage(fx)).toBe(0);
+    expect(await logsOf(fx)).toHaveLength(0);
+    expect(calls.filter((c) => c.url.includes("api.openai.com"))).toHaveLength(0);
   });
 
   it("skips and notifies when a selected Sentry project is no longer accessible, without charging usage", async () => {

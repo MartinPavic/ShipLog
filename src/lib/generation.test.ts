@@ -84,7 +84,7 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
   };
   let github: { commits: unknown[] };
   let ai: { status: number; chunks: string[] };
-  let sentry: ((url: URL, init?: RequestInit) => Response) | null;
+  let sentry: ((url: URL, init?: RequestInit) => Response | Promise<Response>) | null;
   let project: Awaited<ReturnType<typeof import("./projects").createProject>>;
 
   beforeAll(async () => {
@@ -228,6 +228,7 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
   });
 
   const SENTRY_TOKEN = "sntryu_" + "0123abcd".repeat(8);
+  const SENTRY_TOKEN_ROTATED = "sntryu_" + "feedbeef".repeat(8);
   const web = { id: "11", slug: "web", name: "Web" };
   const fetchCalls = () =>
     (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [string | URL, RequestInit?][];
@@ -241,6 +242,17 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     await getDb()
       .insert(sentryConnections)
       .values({ ownerId: owner.ownerId, organizationSlug: "acme", encryptedToken: encrypt(SENTRY_TOKEN) });
+  }
+
+  async function rotateSentryToken() {
+    const { eq } = await import("drizzle-orm");
+    const { getDb } = await import("@/db");
+    const { sentryConnections } = await import("@/db/schema");
+    const { encrypt } = await import("./crypto");
+    await getDb()
+      .update(sentryConnections)
+      .set({ encryptedToken: encrypt(SENTRY_TOKEN_ROTATED), updatedAt: new Date() })
+      .where(eq(sentryConnections.ownerId, owner.ownerId));
   }
   async function sentryProject() {
     const { createProject } = await import("./projects");
@@ -343,6 +355,27 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     expect(new Set(seen)).toEqual(new Set([`Bearer ${SENTRY_TOKEN}`]));
   });
 
+  it("uses one Sentry connection across revalidation and event fetches", async () => {
+    stubApis();
+    const seen: string[] = [];
+    sentry = async (url, init) => {
+      const auth = new Headers(init?.headers).get("authorization");
+      if (auth) seen.push(auth);
+      if (url.pathname.endsWith("/projects/")) {
+        await rotateSentryToken();
+        return new Response(JSON.stringify([web]));
+      }
+      return sentryOk(url);
+    };
+    await connectSentry();
+    const { startStreamingGeneration } = await import("./generation");
+    const gen = await startStreamingGeneration({ owner, project: await sentryProject(), period: { days: 7 } });
+    await gen.finish(await collect(gen.stream));
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set([`Bearer ${SENTRY_TOKEN}`]));
+  });
+
   it.each([
     [401, "SENTRY_AUTH"],
     [403, "SENTRY_FORBIDDEN"],
@@ -399,7 +432,7 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     expect(fetchCalls().some(([url]) => String(url).includes("api.openai.com"))).toBe(false);
   });
 
-  it("never generates from Sentry alone: empty repository activity is rejected after project revalidation", async () => {
+  it("never generates from Sentry alone: empty repository activity is rejected before any Sentry revalidation", async () => {
     stubApis();
     github.commits = [];
     sentry = vi.fn(sentryOk);
@@ -409,9 +442,37 @@ describe.skipIf(!process.env.DATABASE_URL)("streaming generation lifecycle (data
     await expect(startStreamingGeneration({ owner, project: withSentry, period: { days: 7 } })).rejects.toMatchObject({
       code: "NO_ACTIVITY",
     });
-    const urls = sentryCalls();
-    expect(urls).toHaveLength(1);
-    expect(urls[0].pathname.endsWith("/projects/")).toBe(true);
+    expect(sentryCalls()).toEqual([]);
+  });
+
+  it("configures a 15-second overall deadline for project revalidation", async () => {
+    stubApis();
+    sentry = vi.fn(sentryOk);
+    await connectSentry();
+    const timerSpy = vi.spyOn(globalThis, "setTimeout");
+    const { startStreamingGeneration } = await import("./generation");
+    const gen = await startStreamingGeneration({ owner, project: await sentryProject(), period: { days: 7 } });
+    await gen.finish(await collect(gen.stream));
+    expect(timerSpy.mock.calls.some(([, timeout]) => timeout === 15_000)).toBe(true);
+  });
+
+  it("fails safely with SENTRY_TIMEOUT during project revalidation and refunds usage", async () => {
+    stubApis();
+    sentry = (url) => {
+      if (url.pathname.endsWith("/projects/")) {
+        throw Object.assign(new Error("slow"), { name: "TimeoutError" });
+      }
+      return sentryOk(url);
+    };
+    await connectSentry();
+    const { startStreamingGeneration } = await import("./generation");
+    const before = await usage();
+    await expect(startStreamingGeneration({ owner, project: await sentryProject(), period: { days: 7 } })).rejects.toMatchObject({
+      code: "SENTRY_TIMEOUT",
+      status: 504,
+    });
+    expect(await usage()).toBe(before);
+    expect(fetchCalls().some(([url]) => String(url).includes("api.openai.com"))).toBe(false);
   });
 
   it("writes with a custom template's instructions and titles the log after it", async () => {

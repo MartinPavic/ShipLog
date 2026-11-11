@@ -20,7 +20,11 @@ function requiredScopesText(scopes: readonly SentryScope[]): string {
 export function mapSentryStatus(status: number, scopes: readonly SentryScope[], messages: ErrorMessages): ApiError {
   const scopeText = requiredScopesText(scopes);
   if (status >= 300 && status < 400) {
-    return new ApiError(502, "Sentry redirected the request, which is not allowed.", "SENTRY_REDIRECT");
+    return new ApiError(
+      502,
+      "Sentry redirected the request, which is not allowed. Check the organization slug and Reconnect Sentry in Settings.",
+      "SENTRY_REDIRECT"
+    );
   }
   if (status === 401) {
     return new ApiError(400, `Sentry rejected the token. Check that it is valid and has ${scopeText} access.`, "SENTRY_AUTH");

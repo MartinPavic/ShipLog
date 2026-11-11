@@ -19,6 +19,7 @@ import { finalizeGeneration, releaseGeneration, reserveGeneration, type Reservat
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STALE_GENERATION_MS = 10 * 60 * 1000;
+const SENTRY_REVALIDATION_DEADLINE_MS = 15_000;
 
 export type PeriodInput = { days?: number; from?: Date; to?: Date };
 
@@ -54,6 +55,18 @@ type Prepared = {
   prompt: string;
 };
 
+async function withDeadline<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException("Sentry project revalidation timed out", "TimeoutError"));
+  }, ms);
+  try {
+    return await work(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Reserves usage and gathers everything needed for the AI call; releases the usage on failure.
 async function prepare(input: GenerateInput): Promise<Prepared> {
   const { owner, project, existing } = input;
@@ -79,13 +92,7 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
   const reservation = await reserveGeneration(owner.ownerId, ai.kind, ai.limits);
 
   try {
-    const sentryProjects = project.sentryProjects.length
-      ? await canonicalizeSentryProjects(owner.ownerId, project.sentryProjects)
-      : [];
-    const sentryConnection = sentryProjects.length ? await getSentryConnection(owner.ownerId) : null;
-    if (sentryProjects.length && !sentryConnection) {
-      throw new ApiError(400, "Connect Sentry in Settings to use this project's Sentry projects.", "NO_SENTRY");
-    }
+    const selectedSentryProjects = project.sentryProjects;
 
     const period = existing
       ? { start: existing.periodStart, end: existing.periodEnd }
@@ -123,6 +130,19 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       );
     }
 
+    // Sentry only supplements repository activity, so it is fetched after the emptiness check.
+    let sentry: SentryActivity | undefined;
+    if (selectedSentryProjects.length) {
+      const sentryConnection = await getSentryConnection(owner.ownerId);
+      if (!sentryConnection) {
+        throw new ApiError(400, "Connect Sentry in Settings to use this project's Sentry projects.", "NO_SENTRY");
+      }
+      const sentryProjects = await withDeadline(SENTRY_REVALIDATION_DEADLINE_MS, (signal) =>
+        canonicalizeSentryProjects(owner.ownerId, selectedSentryProjects, { connection: sentryConnection, signal })
+      );
+      sentry = await fetchSentryActivity(sentryConnection, sentryProjects, period.start, period.end);
+    }
+
     const ctx = {
       name: project.name,
       description: project.description,
@@ -131,10 +151,6 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       tone: template.tone,
       audience: template.audience,
     };
-    // Sentry only supplements repository activity, so it is fetched after the emptiness check.
-    const sentry = sentryConnection
-      ? await fetchSentryActivity(sentryConnection, sentryProjects, period.start, period.end)
-      : undefined;
     return {
       input,
       ai,

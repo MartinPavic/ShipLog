@@ -19,7 +19,7 @@ const upstreamProjectRowSchema = z.object({
   name: z.string(),
 });
 
-async function fetchProjectPage(organizationSlug: string, token: string, cursor?: string) {
+async function fetchProjectPage(organizationSlug: string, token: string, cursor?: string, signal?: AbortSignal) {
   const params: [string, string][] = [["per_page", String(PER_PAGE)]];
   if (cursor) params.push(["cursor", cursor]);
   const { body, cursor: next } = await fetchSentryOrganizationPage(
@@ -29,6 +29,7 @@ async function fetchProjectPage(organizationSlug: string, token: string, cursor?
     {
       scopes: ["project:read", "event:read"],
       errors: { notFound: "Sentry could not find that organization. Check the organization slug." },
+      signal,
     }
   );
 
@@ -63,6 +64,12 @@ export async function getSentryConnection(ownerId: string) {
   }
   return { organizationSlug: row.organizationSlug, token, last4: last4(token) };
 }
+
+export type SentryWorkspaceConnection = {
+  organizationSlug: string;
+  token: string;
+  last4: string;
+};
 
 export async function getSentryStatus(ownerId: string) {
   const [row] = await getDb()
@@ -99,14 +106,19 @@ export async function deleteSentryConnection(ownerId: string) {
   await getDb().delete(sentryConnections).where(eq(sentryConnections.ownerId, ownerId));
 }
 
-export async function listSentryProjects(ownerId: string): Promise<SentryProjectRef[]> {
-  const connection = await getSentryConnection(ownerId);
+type ListSentryProjectsOptions = {
+  connection?: SentryWorkspaceConnection | null;
+  signal?: AbortSignal;
+};
+
+export async function listSentryProjects(ownerId: string, options: ListSentryProjectsOptions = {}): Promise<SentryProjectRef[]> {
+  const connection = options.connection === undefined ? await getSentryConnection(ownerId) : options.connection;
   if (!connection) throw new ApiError(400, "Connect Sentry in Settings first.", "NO_SENTRY");
 
   const projects: SentryProjectRef[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const result = await fetchProjectPage(connection.organizationSlug, connection.token, cursor);
+    const result = await fetchProjectPage(connection.organizationSlug, connection.token, cursor, options.signal);
     projects.push(...result.projects);
     if (!result.nextCursor) {
       cursor = undefined;
@@ -125,9 +137,13 @@ export async function listSentryProjects(ownerId: string): Promise<SentryProject
 }
 
 // Submitted slugs and names are never trusted: only ids are matched, and the stored record comes from Sentry.
-export async function canonicalizeSentryProjects(ownerId: string, submitted: SentryProjectRef[]): Promise<SentryProjectRef[]> {
+export async function canonicalizeSentryProjects(
+  ownerId: string,
+  submitted: SentryProjectRef[],
+  options: ListSentryProjectsOptions = {}
+): Promise<SentryProjectRef[]> {
   if (submitted.length === 0) return [];
-  const accessible = new Map((await listSentryProjects(ownerId)).map((project) => [project.id, project]));
+  const accessible = new Map((await listSentryProjects(ownerId, options)).map((project) => [project.id, project]));
   return submitted.map(({ id }) => {
     const project = accessible.get(id);
     if (!project) {
