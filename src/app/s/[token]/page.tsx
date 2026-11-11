@@ -3,10 +3,11 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { Markdown } from "@/components/markdown";
+import { PrintButton } from "@/components/export-menu";
 import { SharePasswordGate } from "@/components/share-password-gate";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { formatDate } from "@/lib/format";
-import { getSharedLog } from "@/lib/public";
+import { formatDateTime } from "@/lib/format";
+import { getSharedLogForPage } from "@/lib/public";
 import { ACCESS_COOKIE, verifyAccess } from "@/lib/share";
 
 export const metadata: Metadata = {
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 
 export default async function SharedLogPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const log = await getSharedLog(token);
+  const log = await getSharedLogForPage(token);
   if (!log) notFound();
 
   if (log.passwordHash) {
@@ -37,10 +38,13 @@ export default async function SharedLogPage({ params }: { params: Promise<{ toke
           <p className="text-sm text-muted-foreground">{log.projectName}</p>
           <h1 className="text-2xl font-bold">{log.title}</h1>
           <p className="text-sm text-muted-foreground">
-            {formatDate(log.periodStart)} – {formatDate(log.periodEnd)}
+            Generated {formatDateTime(log.createdAt)}
           </p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2 print:hidden">
+          {log.pdfAllowed && <PrintButton />}
+          <ThemeToggle />
+        </div>
       </header>
       <Markdown>{log.content}</Markdown>
       {siteConfig.publicFooter && (

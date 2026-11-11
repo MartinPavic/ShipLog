@@ -1,13 +1,14 @@
 import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { ownerProfiles, projects, shipLogs } from "@/db/schema";
+import { getPlanLimits } from "@/lib/plans";
 import { isShareToken } from "@/lib/share";
 
 const SLUG_RE = /^[a-z0-9-]{1,64}$/;
 export const isSlug = (value: string) => SLUG_RE.test(value);
 
-// Only what a public viewer may see; owner ids, sources and hashes stay out.
-export async function getSharedLog(token: string) {
+// Owner metadata is used for server-side entitlement checks and stripped from public results.
+async function findSharedLog(token: string) {
   if (!isShareToken(token)) return null;
   const [row] = await getDb()
     .select({
@@ -19,12 +20,36 @@ export async function getSharedLog(token: string) {
       createdAt: shipLogs.createdAt,
       passwordHash: shipLogs.sharePasswordHash,
       projectName: projects.name,
+      ownerId: projects.ownerId,
     })
     .from(shipLogs)
     .innerJoin(projects, eq(projects.id, shipLogs.projectId))
     .where(and(eq(shipLogs.shareToken, token), eq(shipLogs.status, "ready"), isNull(projects.archivedAt)))
     .limit(1);
   return row ?? null;
+}
+
+export async function getSharedLog(token: string) {
+  const row = await findSharedLog(token);
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    createdAt: row.createdAt,
+    passwordHash: row.passwordHash,
+    projectName: row.projectName,
+  };
+}
+
+export async function getSharedLogForPage(token: string) {
+  const row = await findSharedLog(token);
+  if (!row) return null;
+  const { ownerId, ...log } = row;
+  const { limits } = await getPlanLimits(ownerId);
+  return { ...log, pdfAllowed: limits.pdfExport };
 }
 
 export const CHANGELOG_PAGE_SIZE = 20;

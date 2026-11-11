@@ -1,29 +1,48 @@
 import Link from "next/link";
-import { ProjectForm } from "@/components/project-form";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { listProjects } from "@/lib/projects";
-import { listTemplates } from "@/lib/templates";
 
 export default async function ProjectsPage() {
   const owner = await getOwner();
-  const [projects, { limits, plan }, templates] = await Promise.all([
+  const [projects, { limits, plan }] = await Promise.all([
     listProjects(owner.ownerId),
     getPlanLimits(owner.ownerId),
-    listTemplates(owner.ownerId),
   ]);
   const atLimit = projects.length >= limits.maxProjects;
 
   return (
     <div className="max-w-3xl space-y-8">
-      <div>
-        <h1 className="mb-2 text-2xl font-bold">Projects</h1>
-        <p className="text-muted-foreground">Each project turns the activity of its repositories into ship logs.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-2 text-2xl font-bold">Projects</h1>
+          <p className="text-muted-foreground">Each project turns the activity of its repositories into ship logs.</p>
+        </div>
+        {!atLimit && (
+          <Link href="/dashboard/projects/new" className={buttonVariants()}>
+            New project
+          </Link>
+        )}
       </div>
+
+      {projects.length === 0 && !atLimit && (
+        <Card>
+          <CardContent className="space-y-3 py-10 text-center">
+            <p className="font-medium">No projects yet</p>
+            <p className="text-sm text-muted-foreground">
+              Group your repositories into a project to start generating ship logs.
+            </p>
+            <Link href="/dashboard/projects/new" className={buttonVariants({ size: "lg" })}>
+              Create your first project
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {projects.length > 0 && (
         <div className="space-y-3">
@@ -47,7 +66,7 @@ export default async function ProjectsPage() {
         </div>
       )}
 
-      {atLimit ? (
+      {atLimit && (
         <Card>
           <CardContent className="space-y-3 pt-6">
             <p className="text-sm text-muted-foreground">
@@ -62,8 +81,6 @@ export default async function ProjectsPage() {
             )}
           </CardContent>
         </Card>
-      ) : (
-        <ProjectForm mode="create" templates={templates} />
       )}
     </div>
   );

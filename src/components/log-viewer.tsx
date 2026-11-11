@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
 import { streamGeneration } from "@/lib/client-generate";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 type LogView = {
   id: string;
@@ -109,7 +109,7 @@ export function LogViewer({
             </CardTitle>
           )}
           <p className="text-sm text-muted-foreground">
-            {formatDate(log.periodStart)} – {formatDate(log.periodEnd)} · generated {formatDateTime(log.createdAt)}
+            Generated {formatDateTime(log.createdAt)}
           </p>
           <div className="flex flex-wrap gap-2">
             {editing ? (
