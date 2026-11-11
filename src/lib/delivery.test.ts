@@ -479,7 +479,7 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       expect(res.status).toBe(201);
       const { channel } = await res.json();
       try {
-        expect(channel).toMatchObject({ kind: "teams", enabled: true, hint: `${TEAMS_HOST}/…/cdef` });
+        expect(channel).toMatchObject({ kind: "teams", enabled: true, hint: `${TEAMS_HOST}/…` });
         expect(JSON.stringify(channel)).not.toContain("SECRETTEAMSSIG");
 
         const { getDb } = await import("@/db");
@@ -503,7 +503,7 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       }
     });
 
-    it("rejects non-Workflows URLs without echoing the signature", async () => {
+    it("rejects non-allowed Teams URLs without echoing the signature", async () => {
       for (const webhookUrl of [
         "https://evil.example.com/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?sig=SECRETTEAMSSIG_abc",
         TEAMS.replace("https:", "http:"),

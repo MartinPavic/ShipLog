@@ -5,10 +5,9 @@ const HOSTS = {
 
 export type WebhookKind = keyof typeof HOSTS | "teams";
 
-// Microsoft documents Workflows webhook URLs only as https://<host>.logic.azure.com:443/<path>;
-// the path below is the Logic Apps request-trigger shape those URLs use in practice.
+// Microsoft currently documents Teams Workflows callbacks on *.logic.azure.com.
+// Keep host validation strict, but avoid assuming a path grammar that docs do not define.
 const TEAMS_HOST_SUFFIX = ".logic.azure.com";
-const TEAMS_PATH = /^\/workflows\/([0-9a-f]{32})\/triggers\/[\w-]+\/paths\/invoke$/i;
 
 function isTeamsHost(hostname: string): boolean {
   return hostname.length > TEAMS_HOST_SUFFIX.length && hostname.endsWith(TEAMS_HOST_SUFFIX);
@@ -25,7 +24,7 @@ export function isAllowedWebhook(kind: WebhookKind, value: string): boolean {
   // `port` is empty for the default 443, so an explicit :443 is accepted and any other port is not.
   if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
   if (kind === "teams") {
-    return isTeamsHost(url.hostname) && TEAMS_PATH.test(url.pathname) && !!url.searchParams.get("sig");
+    return isTeamsHost(url.hostname) && url.pathname !== "/" && !!url.searchParams.get("sig");
   }
   if (!(HOSTS[kind] as readonly string[]).includes(url.hostname)) return false;
   return kind === "slack"
@@ -36,9 +35,8 @@ export function isAllowedWebhook(kind: WebhookKind, value: string): boolean {
 export function webhookHint(value: string): string {
   try {
     const url = new URL(value);
-    // The tail of a Teams URL is its signature, so the hint uses the workflow id instead.
-    const teamsId = isTeamsHost(url.hostname) ? TEAMS_PATH.exec(url.pathname)?.[1] : undefined;
-    return `${url.hostname}/…/${teamsId ? teamsId.slice(-4) : value.slice(-4)}`;
+    if (isTeamsHost(url.hostname)) return `${url.hostname}/…`;
+    return `${url.hostname}/…/${value.slice(-4)}`;
   } catch {
     return "…";
   }

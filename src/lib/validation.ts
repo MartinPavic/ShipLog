@@ -165,7 +165,7 @@ export type LogListQuery = z.infer<typeof logListQuerySchema>;
 
 const slackUrl = z.string().trim().refine((v) => isAllowedWebhook("slack", v), "Enter a Slack incoming webhook URL (https://hooks.slack.com/services/…)");
 const discordUrl = z.string().trim().refine((v) => isAllowedWebhook("discord", v), "Enter a Discord webhook URL (https://discord.com/api/webhooks/…)");
-const teamsUrl = z.string().trim().refine((v) => isAllowedWebhook("teams", v), "Enter a Microsoft Teams Workflows webhook URL (https://….logic.azure.com/workflows/…)");
+const teamsUrl = z.string().trim().refine((v) => isAllowedWebhook("teams", v), "Enter a Microsoft Teams Workflows webhook URL on https://<subdomain>.logic.azure.com with a valid sig.");
 const recipients = z.array(z.string().trim().toLowerCase().pipe(z.email("Enter valid email addresses"))).min(1, "Add at least one recipient").max(10);
 
 export const createChannelSchema = z.discriminatedUnion("kind", [

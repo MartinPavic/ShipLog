@@ -213,13 +213,15 @@ describe("channel schemas", () => {
   });
 
   it("accepts a Teams Workflows webhook and rejects other hosts", () => {
-    const url = "https://prod-12.westus.logic.azure.com:443/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETSIG_abc-123";
+    const url = "https://prod-12.westus.logic.azure.com:443/xxxxxxxxx?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETSIG_abc-123";
     const parsed = createChannelSchema.parse({ kind: "teams", webhookUrl: ` ${url} ` });
     expect(parsed).toEqual({ kind: "teams", webhookUrl: url });
 
     const failure = createChannelSchema.safeParse({ kind: "teams", webhookUrl: "https://evil.example.com/workflows/x?sig=SECRETSIG_abc-123" });
     expect(failure.success).toBe(false);
     expect(JSON.stringify(failure.error?.issues)).not.toContain("SECRETSIG");
+    expect(createChannelSchema.safeParse({ kind: "teams", webhookUrl: "https://prod-12.westus.logic.azure.com/?sig=SECRETSIG_abc-123" }).success).toBe(false);
+    expect(createChannelSchema.safeParse({ kind: "teams", webhookUrl: "https://prod-12.westus.logic.azure.com/xxxxxxxxx?sig=" }).success).toBe(false);
     expect(createChannelSchema.safeParse({ kind: "teams", webhookUrl: "https://hooks.slack.com/services/T1/B1/x" }).success).toBe(false);
     expect(createChannelSchema.safeParse({ kind: "slack", webhookUrl: url }).success).toBe(false);
   });

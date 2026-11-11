@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { isAllowedWebhook, webhookHint } from "./webhooks";
 
-const TEAMS_ID = "0123456789abcdef0123456789abcdef";
 const TEAMS_QUERY = "?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETSIG_abc-123";
-const teamsUrl = (host = "prod-12.westus.logic.azure.com", path = `/workflows/${TEAMS_ID}/triggers/manual/paths/invoke`, query = TEAMS_QUERY) =>
+const teamsUrl = (host = "prod-12.westus.logic.azure.com", path = "/workflows/anything", query = TEAMS_QUERY) =>
   `https://${host}${path}${query}`;
 
 describe("isAllowedWebhook", () => {
@@ -16,6 +15,8 @@ describe("isAllowedWebhook", () => {
     ["teams", teamsUrl("prod-12.westus.logic.azure.com:443")],
     ["teams", teamsUrl("prod-01.northeurope.logic.azure.com")],
     ["teams", teamsUrl("PROD-12.WESTUS.LOGIC.AZURE.COM")],
+    ["teams", teamsUrl(undefined, "/xxxxxxxxx")],
+    ["teams", teamsUrl(undefined, "/powerautomate/automations/direct/workflows/abc/triggers/manual/paths/invoke")],
   ] as const)("accepts %s %s", (kind, url) => {
     expect(isAllowedWebhook(kind, url)).toBe(true);
   });
@@ -44,14 +45,12 @@ describe("isAllowedWebhook", () => {
     ["teams", teamsUrl("evil-logic.azure.com")],
     ["teams", teamsUrl("prod-12.westus.logic.azure.com.")],
     ["teams", teamsUrl("prod-12.westus.logic.azure.com.evil.com")],
-    ["teams", teamsUrl("evil.com", `/prod.logic.azure.com/workflows/${TEAMS_ID}/triggers/manual/paths/invoke`)],
+    ["teams", teamsUrl("evil.com", "/prod.logic.azure.com/workflows/abc/triggers/manual/paths/invoke")],
     ["teams", teamsUrl("localhost")],
     ["teams", teamsUrl("169.254.169.254")],
+    ["teams", teamsUrl("contoso.environment.api.powerplatform.com")],
     ["teams", teamsUrl("outlook.office.com", "/webhook/abc/IncomingWebhook/def/ghi")],
-    ["teams", teamsUrl(undefined, "/workflows/xyz/triggers/manual/paths/invoke")],
-    ["teams", teamsUrl(undefined, `/workflows/${TEAMS_ID}/triggers/manual/paths/invoke/extra`)],
-    ["teams", teamsUrl(undefined, `/workflows/${TEAMS_ID}/triggers/manual/run`)],
-    ["teams", teamsUrl(undefined, "/api/webhooks/123/abc")],
+    ["teams", teamsUrl(undefined, "/")],
     ["teams", teamsUrl(undefined, undefined, "?api-version=2016-06-01")],
     ["teams", teamsUrl(undefined, undefined, "?sig=")],
     ["teams", "https://hooks.slack.com/services/T1/B1/x"],
@@ -73,7 +72,7 @@ describe("webhookHint", () => {
 
   it("never exposes the Teams signature or its tail", () => {
     const hint = webhookHint(teamsUrl());
-    expect(hint).toBe("prod-12.westus.logic.azure.com/…/cdef");
+    expect(hint).toBe("prod-12.westus.logic.azure.com/…");
     expect(hint).not.toContain("SECRETSIG");
     expect(hint).not.toContain("sig");
     expect(hint).not.toContain("123");
