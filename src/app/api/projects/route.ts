@@ -3,7 +3,8 @@ import { handle, parseBody } from "@/lib/api";
 import { getOwner } from "@/lib/owner";
 import { ensureOwnerSlug } from "@/lib/owner-profile";
 import { getPlanLimits } from "@/lib/plans";
-import { createProject, listProjects } from "@/lib/projects";
+import { createProject, ensureProjectCapacity, listProjects } from "@/lib/projects";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { canonicalizeSentryProjects } from "@/lib/sentry-settings";
 import { createProjectSchema } from "@/lib/validation";
 
@@ -15,8 +16,16 @@ export const GET = handle(async () => {
 export const POST = handle(async (req: Request) => {
   const owner = await getOwner();
   const input = await parseBody(req, createProjectSchema);
-  const sentryProjects = await canonicalizeSentryProjects(owner.ownerId, input.sentryProjects);
   const { limits } = await getPlanLimits(owner.ownerId);
+
+  await ensureProjectCapacity(owner.ownerId, limits.maxProjects);
+
+  let sentryProjects = input.sentryProjects;
+  if (sentryProjects.length > 0) {
+    await enforceRateLimit(`sentry-projects:${owner.ownerId}`, 120, 60 * 60 * 1000, "Sentry project requests");
+    sentryProjects = await canonicalizeSentryProjects(owner.ownerId, sentryProjects);
+  }
+
   const project = await createProject(owner, { ...input, sentryProjects }, limits.maxProjects);
   if (project.isPublicChangelog) await ensureOwnerSlug(owner);
   return NextResponse.json({ project }, { status: 201 });

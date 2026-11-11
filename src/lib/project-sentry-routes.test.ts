@@ -47,6 +47,13 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
   }
   const projectRows = () =>
     getDb().select().from(schema.projects).where(drizzle.eq(schema.projects.ownerId, testOwner.ownerId));
+  const sentryProjectRateCount = async () => {
+    const rows = await getDb()
+      .select({ count: schema.rateLimits.count })
+      .from(schema.rateLimits)
+      .where(drizzle.eq(schema.rateLimits.key, `sentry-projects:${testOwner.ownerId}`));
+    return rows.reduce((sum, row) => sum + row.count, 0);
+  };
   async function createWith(sentryProjects?: unknown) {
     const { POST } = await import("@/app/api/projects/route");
     return POST(json("POST", { name: "Site", ...(sentryProjects === undefined ? {} : { sentryProjects }) }));
@@ -78,6 +85,9 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
     const db = getDb();
     await db.delete(schema.projects).where(drizzle.inArray(schema.projects.ownerId, created));
     await db.delete(schema.sentryConnections).where(drizzle.inArray(schema.sentryConnections.ownerId, created));
+    await db
+      .delete(schema.rateLimits)
+      .where(drizzle.inArray(schema.rateLimits.key, created.map((ownerId) => `sentry-projects:${ownerId}`)));
   });
 
   describe("POST /api/projects", () => {
@@ -91,6 +101,7 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       const { project } = await response.json();
       expect(project.sentryProjects).toEqual([real[1], real[0]]);
       expect((await projectRows())[0].sentryProjects).toEqual([real[1], real[0]]);
+      expect(await sentryProjectRateCount()).toBe(1);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -112,13 +123,29 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
     it("allows an empty selection without a Sentry connection and without calling Sentry", async () => {
       expect((await createWith([])).status).toBe(201);
       expect((await projectRows())[0].sentryProjects).toEqual([]);
+      expect(await sentryProjectRateCount()).toBe(0);
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("defaults an omitted selection to empty without calling Sentry", async () => {
       expect((await createWith()).status).toBe(201);
       expect((await projectRows())[0].sentryProjects).toEqual([]);
+      expect(await sentryProjectRateCount()).toBe(0);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("checks plan limits before reconciling non-empty Sentry selections", async () => {
+      const { getPlanLimits } = await import("@/lib/plans");
+      const { limits } = await getPlanLimits(testOwner.ownerId);
+      for (let i = 0; i < limits.maxProjects; i++) {
+        expect((await createWith()).status).toBe(201);
+      }
+      await connect();
+      const response = await createWith([real[0]]);
+      expect(response.status).toBe(403);
+      expect((await response.json()).code).toBe("LIMIT_REACHED");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await sentryProjectRateCount()).toBe(0);
     });
 
     it("resolves ids against the caller's own workspace connection only", async () => {
@@ -157,6 +184,7 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
     async function seeded() {
       await connect();
       const { project } = await (await createWith([real[0], real[1]])).json();
+      await getDb().delete(schema.rateLimits).where(drizzle.eq(schema.rateLimits.key, `sentry-projects:${testOwner.ownerId}`));
       fetchMock.mockClear();
       fetchMock.mockImplementation(async () => sentryPage(real));
       return project.id as string;
@@ -173,6 +201,7 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       const response = await patch(id, { sentryProjects: [{ id: "33", slug: "forged", name: "Forged" }] });
       expect(response.status).toBe(200);
       expect((await response.json()).project.sentryProjects).toEqual([real[2]]);
+      expect(await sentryProjectRateCount()).toBe(1);
       expect(await stored(id)).toEqual([real[2]]);
     });
 
@@ -189,7 +218,16 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       const response = await patch(id, { name: "Renamed" });
       expect(response.status).toBe(200);
       expect(await stored(id)).toEqual([real[0], real[1]]);
+      expect(await sentryProjectRateCount()).toBe(0);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("checks project ownership before reconciling non-empty Sentry selections", async () => {
+      await connect();
+      const response = await patch(crypto.randomUUID(), { sentryProjects: [real[0]] });
+      expect(response.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await sentryProjectRateCount()).toBe(0);
     });
 
     it("clears the selection with an empty list even after Sentry was disconnected", async () => {

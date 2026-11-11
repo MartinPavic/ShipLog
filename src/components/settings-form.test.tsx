@@ -68,6 +68,8 @@ describe("SentryCard", () => {
   it("offers organization and token inputs when Sentry is not connected", () => {
     const html = render(disconnected);
     expect(html).toContain("Sentry");
+    expect(html).toContain("project:read");
+    expect(html).toContain("event:read");
     expect(html).toContain('id="sentryOrganization"');
     expect(html).toMatch(/<input[^>]*id="sentryToken"[^>]*type="password"|<input[^>]*type="password"[^>]*id="sentryToken"/);
     expect(button(disconnected, "Connect Sentry")?.disabled).toBe(true);

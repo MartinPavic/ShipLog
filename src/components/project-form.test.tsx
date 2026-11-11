@@ -111,6 +111,15 @@ describe("SentryProjectPicker", () => {
     expect(html).toContain("Sentry is not connected");
     expect(html).toContain("kept");
     expect(control(tree(), (p) => p.children === "Browse Sentry projects")).toHaveLength(0);
+    expect(control(tree(), (p) => String(p["aria-label"] ?? "").startsWith("Remove "))).toHaveLength(0);
+  });
+
+  it("offers clear-all while disconnected so selections can be removed without Sentry access", () => {
+    const { props, tree } = picker({ value: [web, api], connected: false });
+    const [clear] = control(tree(), (p) => p.children === "Clear all");
+    expect(clear).toBeDefined();
+    clear.onClick?.();
+    expect(props.onChange).toHaveBeenCalledWith([]);
   });
 
   it("explains that Sentry is not connected when nothing is selected", () => {

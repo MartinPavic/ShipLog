@@ -272,25 +272,34 @@ export function SentryProjectPicker({
             <li key={project.id} className="flex items-center gap-2">
               <span className="flex-1 truncate text-sm font-medium">{project.name}</span>
               <span className="text-xs text-muted-foreground">{project.slug}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label={`Remove ${project.name}`}
-                onClick={() => onChange(value.filter((item) => item.id !== project.id))}
-              >
-                Remove
-              </Button>
+              {connected && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Remove ${project.name}`}
+                  onClick={() => onChange(value.filter((item) => item.id !== project.id))}
+                >
+                  Remove
+                </Button>
+              )}
             </li>
           ))}
         </ul>
       )}
 
       {!connected && (
-        <p className="text-sm text-muted-foreground">
-          Sentry is not connected for this workspace. A workspace admin can connect it in Settings.
-          {value.length > 0 ? " Saved selections are kept." : ""}
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Sentry is not connected for this workspace. A workspace admin can connect it in Settings.
+            {value.length > 0 ? " Saved selections are kept." : ""}
+          </p>
+          {value.length > 0 && (
+            <Button type="button" variant="outline" size="sm" onClick={() => onChange([])}>
+              Clear all
+            </Button>
+          )}
+        </div>
       )}
 
       {connected && unavailable.length > 0 && (

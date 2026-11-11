@@ -161,6 +161,28 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     }
   });
 
+  it("keeps Sentry status actionable when a stored token can no longer be decrypted", async () => {
+    const { getSetupStatus } = await import("@/lib/settings");
+    const { getDb } = await import("@/db");
+    const { sentryConnections } = await import("@/db/schema");
+    const { encrypt } = await import("./crypto");
+    const savedKey = process.env.ENCRYPTION_KEY;
+    const token = "sntryu_abcdef0123456789abcdef0123456789";
+    try {
+      process.env.ENCRYPTION_KEY = Buffer.alloc(32, 4).toString("base64");
+      const owner = { ownerId: ownerIds.proManaged, userId: userIds.proManaged };
+      await getDb().insert(sentryConnections).values({ ownerId: owner.ownerId, organizationSlug: "acme", encryptedToken: encrypt(token) });
+
+      process.env.ENCRYPTION_KEY = Buffer.alloc(32, 5).toString("base64");
+      const status = await getSetupStatus(owner);
+      expect(status.sentry).toEqual({ configured: true, organizationSlug: "acme", last4: null });
+      expect(JSON.stringify(status)).not.toContain(token);
+    } finally {
+      if (savedKey === undefined) delete process.env.ENCRYPTION_KEY;
+      else process.env.ENCRYPTION_KEY = savedKey;
+    }
+  });
+
   it("shares billing-off source selection between the dashboard meter, setup status and AI access", async () => {
     const { getSetupStatus } = await import("./settings");
     const { currentPeriod, getUsageMeter } = await import("./usage");

@@ -99,10 +99,23 @@ export async function getSentryConnection(ownerId: string) {
 }
 
 export async function getSentryStatus(ownerId: string) {
-  const connection = await getSentryConnection(ownerId);
-  return connection
-    ? { configured: true as const, organizationSlug: connection.organizationSlug, last4: connection.last4 }
-    : { configured: false as const, organizationSlug: null, last4: null };
+  const [row] = await getDb()
+    .select({ organizationSlug: sentryConnections.organizationSlug, encryptedToken: sentryConnections.encryptedToken })
+    .from(sentryConnections)
+    .where(eq(sentryConnections.ownerId, ownerId))
+    .limit(1);
+  if (!row) return { configured: false as const, organizationSlug: null, last4: null };
+
+  try {
+    return {
+      configured: true as const,
+      organizationSlug: row.organizationSlug,
+      last4: last4(decrypt(row.encryptedToken)),
+    };
+  } catch {
+    // Keep the settings page repairable even if the stored ciphertext is unreadable.
+    return { configured: true as const, organizationSlug: row.organizationSlug, last4: null };
+  }
 }
 
 // Verifies the token and organization against Sentry before anything is stored; project selections are untouched.

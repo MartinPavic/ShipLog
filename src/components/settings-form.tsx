@@ -350,7 +350,7 @@ export function AiCard({ ai, canManage }: { ai: AiStatus; canManage: boolean }) 
 }
 
 type SentryStatus =
-  | { configured: true; organizationSlug: string; last4: string }
+  | { configured: true; organizationSlug: string; last4: string | null }
   | { configured: false; organizationSlug: null; last4: null };
 
 // Admin-only. The stored token is never sent to the client; only the organization and last four characters are.
@@ -367,14 +367,20 @@ export function SentryCard({ sentry }: { sentry: SentryStatus }) {
         <CardTitle>Sentry</CardTitle>
         <CardDescription>
           Connect a Sentry organization so projects can link their Sentry projects. The token is encrypted at rest and
-          needs project:read access.
+          needs read-only project:read and event:read access.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {sentry.configured && !replacing && (
-          <p className="text-sm">
-            Connected to <strong>{sentry.organizationSlug}</strong> with token ending in {sentry.last4}
-          </p>
+          sentry.last4 ? (
+            <p className="text-sm">
+              Connected to <strong>{sentry.organizationSlug}</strong> with token ending in {sentry.last4}
+            </p>
+          ) : (
+            <p className="text-sm">
+              Connected to <strong>{sentry.organizationSlug}</strong>. Replace the token to restore verification details.
+            </p>
+          )
         )}
         {showForm && (
           <>

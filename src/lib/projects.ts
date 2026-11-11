@@ -21,6 +21,16 @@ function dedupeRepos(repos: ProjectRepo[]): ProjectRepo[] {
   });
 }
 
+function projectLimitReached(maxProjects: number) {
+  return new ApiError(
+    403,
+    maxProjects <= 0
+      ? "Upgrade this workspace to Pro to create projects."
+      : `Your plan allows ${maxProjects} project${maxProjects === 1 ? "" : "s"}. Upgrade to Pro for more.`,
+    "LIMIT_REACHED"
+  );
+}
+
 export async function listProjects(ownerId: string) {
   return getDb()
     .select({
@@ -61,13 +71,7 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
     }
     const [{ n }] = await tx.select({ n: count() }).from(projects).where(active(owner.ownerId));
     if (n >= maxProjects) {
-      throw new ApiError(
-        403,
-        maxProjects <= 0
-          ? "Upgrade this workspace to Pro to create projects."
-          : `Your plan allows ${maxProjects} project${maxProjects === 1 ? "" : "s"}. Upgrade to Pro for more.`,
-        "LIMIT_REACHED"
-      );
+      throw projectLimitReached(maxProjects);
     }
 
     const base = slugify(input.name);
@@ -92,6 +96,12 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
     }
     throw new ApiError(409, "Could not find a free project URL. Try a different name.");
   });
+}
+
+// Route-level precheck to avoid unnecessary upstream reconciliation when the owner is already at plan capacity.
+export async function ensureProjectCapacity(ownerId: string, maxProjects: number) {
+  const [{ n }] = await getDb().select({ n: count() }).from(projects).where(active(ownerId));
+  if (n >= maxProjects) throw projectLimitReached(maxProjects);
 }
 
 // The slug stays fixed on rename so public changelog URLs don't break.
