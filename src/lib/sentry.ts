@@ -148,19 +148,22 @@ export async function fetchSentryActivity(
     const counted = new Array<{ count: number; capped: boolean }>(candidates.length);
     let nextIndex = 0;
     let failed = false;
+    let firstWorkerError: unknown;
     const workers = Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, async () => {
         while (!failed && nextIndex < candidates.length) {
           const index = nextIndex++;
           try {
             counted[index] = await countEvents(connection, candidates[index].id, since, until, overallAbort.signal);
           } catch (error) {
+            if (!firstWorkerError) firstWorkerError = error;
             failed = true;
-            overallAbort.abort(error);
+            overallAbort.abort(firstWorkerError);
             throw error;
           }
         }
       });
     const workerResults = await Promise.allSettled(workers);
+    if (firstWorkerError) throw firstWorkerError;
     const firstFailure = workerResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
     if (firstFailure) throw firstFailure.reason;
 

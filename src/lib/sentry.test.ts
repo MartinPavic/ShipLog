@@ -35,6 +35,16 @@ const events = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `e${i}`
 const urls = () => fetchMock.mock.calls.map((c) => new URL(String(c[0])));
 const isEvents = (u: URL) => u.pathname.endsWith("/events/");
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function route(handlers: { issues: (u: URL) => Response | Promise<Response>; events: (u: URL, issueId: string) => Response | Promise<Response> }) {
   fetchMock.mockImplementation(async (input: URL | string) => {
     const url = new URL(String(input));
@@ -320,6 +330,44 @@ describe("fetchSentryActivity", () => {
     await expect(fetchSentryActivity(connection, projects, since, until)).rejects.toMatchObject({ status: 429, code: "SENTRY_RATE_LIMIT" });
     expect(started).toBeGreaterThan(1);
     expect(aborted).toBeGreaterThan(0);
+  });
+
+  it("surfaces the first real worker error when issue 2 fails while issue 1 is pending", async () => {
+    const issue1Started = deferred<void>();
+    let issue1Aborted = false;
+
+    fetchMock.mockImplementation(async (input: URL | string, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (!isEvents(url)) return json([issue(1), issue(2), issue(3)], last);
+
+      const issueId = /\/issues\/(\d+)\/events\/$/.exec(url.pathname)?.[1];
+      if (issueId === "1") {
+        issue1Started.resolve();
+        return await new Promise<Response>((_resolve, reject) => {
+          const onAbort = () => {
+            issue1Aborted = true;
+            reject(new DOMException("aborted", "AbortError"));
+          };
+          init?.signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      }
+
+      if (issueId === "2") {
+        await issue1Started.promise;
+        return json({ detail: "rate" }, undefined, 429);
+      }
+
+      return await new Promise<Response>((_resolve, reject) => {
+        const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+        init?.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    });
+
+    await expect(fetchSentryActivity(connection, projects, since, until)).rejects.toMatchObject({
+      status: 429,
+      code: "SENTRY_RATE_LIMIT",
+    });
+    expect(issue1Aborted).toBe(true);
   });
 
   describe("provider errors", () => {
