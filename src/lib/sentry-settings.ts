@@ -4,13 +4,11 @@ import { getDb } from "@/db";
 import { sentryConnections, type SentryProjectRef } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { decrypt, encrypt, last4 } from "@/lib/crypto";
+import { fetchSentryOrganizationPage, invalidResponse } from "@/lib/sentry-api";
 import { sentryProjectSchema, sentrySettingsSchema } from "@/lib/validation";
 
-// Hosted Sentry only; callers can never choose the origin or path prefix.
-const SENTRY_API = "https://sentry.io/api/0/";
 const PER_PAGE = 100;
 const MAX_PAGES = 10;
-const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_PROJECT_NAME_LENGTH = 200;
 
 const projectPageSchema = z.array(z.unknown()).max(PER_PAGE);
@@ -21,56 +19,19 @@ const upstreamProjectRowSchema = z.object({
   name: z.string(),
 });
 
-function sentryError(status: number): ApiError {
-  if (status === 401) return new ApiError(400, "Sentry rejected the token. Check that it is valid and has project:read access.", "SENTRY_AUTH");
-  if (status === 403) return new ApiError(400, "The Sentry token does not have project:read access to this organization.", "SENTRY_FORBIDDEN");
-  if (status === 404) return new ApiError(400, "Sentry could not find that organization. Check the organization slug.", "SENTRY_NOT_FOUND");
-  if (status === 429) return new ApiError(429, "Sentry is rate limiting this connection. Try again shortly.", "SENTRY_RATE_LIMIT");
-  return new ApiError(502, "Sentry is temporarily unavailable. Try again shortly.", "SENTRY_UNAVAILABLE");
-}
-
-const invalidResponse = () => new ApiError(502, "Sentry returned an unexpected response.", "SENTRY_INVALID_RESPONSE");
-
-// Only the cursor is taken from the Link header; the URL itself is never followed.
-function nextCursor(link: string | null): string | null {
-  if (!link) return null;
-  for (const part of link.split(/,\s*(?=<)/)) {
-    if (!/\brel="next"/.test(part) || !/\bresults="true"/.test(part)) continue;
-    const cursor = /\bcursor="([^"]*)"/.exec(part)?.[1];
-    if (!cursor || !/^[\w:.-]{1,100}$/.test(cursor)) throw invalidResponse();
-    return cursor;
-  }
-  return null;
-}
-
 async function fetchProjectPage(organizationSlug: string, token: string, cursor?: string) {
-  const url = new URL(`organizations/${encodeURIComponent(organizationSlug)}/projects/`, SENTRY_API);
-  url.searchParams.set("per_page", String(PER_PAGE));
-  if (cursor) url.searchParams.set("cursor", cursor);
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      redirect: "manual",
-      cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      throw new ApiError(504, "Sentry took too long to respond. Try again shortly.", "SENTRY_TIMEOUT");
+  const params: [string, string][] = [["per_page", String(PER_PAGE)]];
+  if (cursor) params.push(["cursor", cursor]);
+  const { body, cursor: next } = await fetchSentryOrganizationPage(
+    { organizationSlug, token },
+    "projects/",
+    params,
+    {
+      scopes: ["project:read", "event:read"],
+      errors: { notFound: "Sentry could not find that organization. Check the organization slug." },
     }
-    throw sentryError(0);
-  }
-  if (!response.ok) throw sentryError(response.status);
+  );
 
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    throw invalidResponse();
-  }
   const parsed = projectPageSchema.safeParse(body);
   if (!parsed.success) throw invalidResponse();
 
@@ -88,7 +49,7 @@ async function fetchProjectPage(organizationSlug: string, token: string, cursor?
     projects.push(normalized.data);
   }
 
-  return { projects, nextCursor: nextCursor(response.headers.get("link")) };
+  return { projects, nextCursor: next };
 }
 
 export async function getSentryConnection(ownerId: string) {

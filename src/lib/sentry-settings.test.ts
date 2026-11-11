@@ -144,7 +144,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       [404, 400, "SENTRY_NOT_FOUND"],
       [429, 429, "SENTRY_RATE_LIMIT"],
       [500, 502, "SENTRY_UNAVAILABLE"],
-      [302, 502, "SENTRY_UNAVAILABLE"],
+      [302, 502, "SENTRY_REDIRECT"],
     ])("maps Sentry %i to a safe %i %s error and saves nothing", async (upstream, status, code) => {
       fetchMock.mockResolvedValue(new Response(`upstream says ${TOKEN}`, { status: upstream, headers: upstream === 302 ? { location: "https://evil.example" } : {} }));
       const { PUT } = await import("@/app/api/settings/sentry/route");
@@ -154,6 +154,24 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       expect(JSON.parse(text).code).toBe(code);
       expect(text).not.toContain(TOKEN);
       expect(await rows()).toHaveLength(0);
+    });
+
+    it("mentions both required read scopes in auth/forbidden responses", async () => {
+      const { PUT } = await import("@/app/api/settings/sentry/route");
+
+      fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }));
+      const auth = await PUT(putRequest({ organizationSlug: "acme", token: TOKEN }));
+      const authBody = await auth.json();
+      expect(authBody.code).toBe("SENTRY_AUTH");
+      expect(authBody.error).toContain("project:read");
+      expect(authBody.error).toContain("event:read");
+
+      fetchMock.mockResolvedValueOnce(new Response("", { status: 403 }));
+      const forbidden = await PUT(putRequest({ organizationSlug: "acme", token: TOKEN }));
+      const forbiddenBody = await forbidden.json();
+      expect(forbiddenBody.code).toBe("SENTRY_FORBIDDEN");
+      expect(forbiddenBody.error).toContain("project:read");
+      expect(forbiddenBody.error).toContain("event:read");
     });
 
     it("maps timeouts, network failures and malformed payloads without leaking the token", async () => {

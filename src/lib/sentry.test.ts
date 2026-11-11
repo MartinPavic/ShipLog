@@ -119,6 +119,21 @@ describe("fetchSentryActivity", () => {
     expect(item.status).toBe("unknown");
   });
 
+  it("sanitizes project names to one line", async () => {
+    route({
+      issues: () => json([issue(1, { project: { id: "11", name: "Remote", slug: "web" } })], last),
+      events: () => json(events(1), last),
+    });
+    const activity = await fetchSentryActivity(
+      connection,
+      [{ id: "11", slug: "web", name: "Web\n\tOps\u2028" }],
+      since,
+      until
+    );
+    expect(activity.issues[0].projectName).toBe("Web Ops");
+    expect(activity.issues[0].projectName).not.toMatch(/[\n\r\t\u2028\u2029]/);
+  });
+
   it("drops issues from unselected projects, malformed rows and issues with no events in the window", async () => {
     route({
       issues: () =>
@@ -165,6 +180,28 @@ describe("fetchSentryActivity", () => {
     expect(result.issues.length).toBeLessThanOrEqual(25);
     expect(result.issues.length).toBe(25);
     expect(urls().filter(isEvents)).toHaveLength(25);
+  });
+
+  it("stops issue paging after 3 pages even when only unselected projects are returned", async () => {
+    let page = 0;
+    route({
+      issues: (u) => {
+        page++;
+        expect(u.searchParams.get("sort")).toBe("freq");
+        expect(u.searchParams.get("limit")).toBe("25");
+        const rows = Array.from({ length: 25 }, (_, i) =>
+          issue(page * 100 + i, { project: { id: "999", name: "Other", slug: "other" } })
+        );
+        return json(rows, next(`${page}:0:0`));
+      },
+      events: () => json(events(1), last),
+    });
+
+    const result = await fetchSentryActivity(connection, projects, since, until);
+    const issueCalls = urls().filter((u) => !isEvents(u));
+    expect(issueCalls).toHaveLength(3);
+    expect(urls().filter(isEvents)).toHaveLength(0);
+    expect(result.issues).toEqual([]);
   });
 
   it("caps event pages and reports a lower-bound count", async () => {
@@ -222,6 +259,69 @@ describe("fetchSentryActivity", () => {
     expect((await fetchSentryActivity(connection, projects, since, until)).issues.map((i) => i.id)).toEqual(["3", "1", "2"]);
   });
 
+  it("treats a missing issue during event fetch as zero events instead of failing", async () => {
+    route({
+      issues: () => json([issue(1), issue(2)], last),
+      events: (_u, id) => (id === "2" ? json({ detail: "gone" }, undefined, 404) : json(events(4), last)),
+    });
+
+    const result = await fetchSentryActivity(connection, projects, since, until);
+    expect(result.issues.map((i) => i.id)).toEqual(["1"]);
+    expect(result.issues[0].eventCount).toBe(4);
+  });
+
+  it("enforces a 45-second overall deadline", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    fetchMock.mockImplementation(async (input: URL | string, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (!isEvents(url)) return json(Array.from({ length: 12 }, (_, i) => issue(i + 1)), last);
+
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(new DOMException("aborted", "AbortError"));
+          return;
+        }
+        const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    });
+
+    const promise = fetchSentryActivity(connection, projects, since, until);
+    const overallTimeout = timeoutSpy.mock.calls.find((call) => call[1] === 45_000)?.[0] as (() => void) | undefined;
+    expect(overallTimeout).toBeTypeOf("function");
+    overallTimeout?.();
+    await expect(promise).rejects.toMatchObject({ status: 504, code: "SENTRY_TIMEOUT" });
+  });
+
+  it("aborts sibling event requests after one worker fails", async () => {
+    let started = 0;
+    let aborted = 0;
+    fetchMock.mockImplementation(async (input: URL | string, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (!isEvents(url)) return json([issue(1), issue(2), issue(3)], last);
+
+      started++;
+      const issueId = /\/issues\/(\d+)\/events\/$/.exec(url.pathname)?.[1];
+      if (issueId === "1") {
+        return json({ detail: "rate" }, undefined, 429);
+      }
+      await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        const onAbort = () => {
+          aborted++;
+          reject(new DOMException("aborted", "AbortError"));
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      return json(events(1), last);
+    });
+
+    await expect(fetchSentryActivity(connection, projects, since, until)).rejects.toMatchObject({ status: 429, code: "SENTRY_RATE_LIMIT" });
+    expect(started).toBeGreaterThan(1);
+    expect(aborted).toBeGreaterThan(0);
+  });
+
   describe("provider errors", () => {
     const expectError = async (status: number, code: string) => {
       const error = await fetchSentryActivity(connection, projects, since, until).catch((e) => e);
@@ -263,6 +363,19 @@ describe("fetchSentryActivity", () => {
       fetchMock.mockRejectedValue(new DOMException("timed out", "TimeoutError"));
       await expectError(504, "SENTRY_TIMEOUT");
       expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it("maps a timeout while parsing JSON to SENTRY_TIMEOUT", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        type: "basic",
+        headers: new Headers({ link: last }),
+        json: async () => {
+          throw new DOMException("timed out while reading", "AbortError");
+        },
+      } as unknown as Response);
+      await expectError(504, "SENTRY_TIMEOUT");
     });
 
     it("maps network failures to an unavailable error", async () => {
@@ -312,6 +425,8 @@ describe("formatSentryActivity", () => {
     expect(text).toContain("12 events");
     expect(text).toContain("https://sentry.io/organizations/acme/issues/1/");
     expect(text).not.toContain("at least");
+    expect(text).toContain("up to the 25 most frequent issue candidates");
+    expect(text).toContain("last seen (Sentry all-time)");
   });
 
   it("marks capped counts as lower bounds", () => {
@@ -321,6 +436,12 @@ describe("formatSentryActivity", () => {
 
   it("uses the singular for one event", () => {
     expect(formatSentryActivity({ issues: [{ ...base, eventCount: 1 }] })).toContain("1 event ");
+  });
+
+  it("serializes untrusted project names as one line JSON text", () => {
+    const text = formatSentryActivity({ issues: [{ ...base, projectName: "Web\n\tOps" }] });
+    expect(text).toContain("\"Web Ops\"");
+    expect(text).not.toContain("\n\tOps");
   });
 
   it("handles empty activity", () => {

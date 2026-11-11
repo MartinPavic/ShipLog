@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { ApiError } from "@/lib/api";
 import type { SentryProjectRef } from "@/db/schema";
-
-// Hosted Sentry only; callers can never choose the origin or path prefix.
-const SENTRY_API = "https://sentry.io/api/0/";
-const REQUEST_TIMEOUT_MS = 10_000;
+import { fetchSentryOrganizationPage, invalidResponse } from "@/lib/sentry-api";
 
 const MAX_ISSUES = 25;
 const ISSUE_PAGE_SIZE = 25;
@@ -13,6 +10,7 @@ const EVENT_PAGE_SIZE = 100;
 const MAX_EVENT_PAGES = 3;
 const CONCURRENCY = 3;
 const MAX_TITLE_LENGTH = 200;
+const OVERALL_TIMEOUT_MS = 45_000;
 
 export type SentryConnection = { organizationSlug: string; token: string };
 export type SentryIssue = {
@@ -41,69 +39,21 @@ const issueRowSchema = z.object({
 const issuePageSchema = z.array(z.unknown()).max(ISSUE_PAGE_SIZE);
 const eventPageSchema = z.array(z.unknown()).max(EVENT_PAGE_SIZE);
 
-const invalidResponse = () => new ApiError(502, "Sentry returned an unexpected response.", "SENTRY_INVALID_RESPONSE");
-
-function sentryError(status: number): ApiError {
-  if (status >= 300 && status < 400) {
-    return new ApiError(502, "Sentry redirected the request, which is not allowed.", "SENTRY_REDIRECT");
-  }
-  if (status === 401) return new ApiError(400, "Sentry rejected the token. Check that it is valid and has event:read access.", "SENTRY_AUTH");
-  if (status === 403) return new ApiError(400, "The Sentry token does not have event:read access to this organization.", "SENTRY_FORBIDDEN");
-  if (status === 404) return new ApiError(400, "Sentry could not find the organization or issue. Check the connection.", "SENTRY_NOT_FOUND");
-  if (status === 429) return new ApiError(429, "Sentry is rate limiting this connection. Try again shortly.", "SENTRY_RATE_LIMIT");
-  return new ApiError(502, "Sentry is temporarily unavailable. Try again shortly.", "SENTRY_UNAVAILABLE");
-}
-
-// Only the cursor is taken from the Link header; the URL itself is never followed.
-function nextCursor(link: string | null): string | null {
-  if (!link) return null;
-  for (const part of link.split(/,\s*(?=<)/)) {
-    if (!/\brel="next"/.test(part) || !/\bresults="true"/.test(part)) continue;
-    const cursor = /\bcursor="([^"]*)"/.exec(part)?.[1];
-    if (!cursor || !/^[\w:.-]{1,100}$/.test(cursor)) throw invalidResponse();
-    return cursor;
-  }
-  return null;
-}
-
-async function getPage(connection: SentryConnection, path: string, params: [string, string][]) {
-  const url = new URL(`organizations/${encodeURIComponent(connection.organizationSlug)}/${path}`, SENTRY_API);
-  for (const [key, value] of params) url.searchParams.append(key, value);
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${connection.token}`, Accept: "application/json" },
-      redirect: "manual",
-      cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      throw new ApiError(504, "Sentry took too long to respond. Try again shortly.", "SENTRY_TIMEOUT");
-    }
-    throw sentryError(0);
-  }
-  if (response.type === "opaqueredirect") throw sentryError(302);
-  if (!response.ok) throw sentryError(response.status);
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    throw invalidResponse();
-  }
-  return { body, cursor: nextCursor(response.headers.get("link")) };
-}
-
 const oneLine = (text: string, max: number) => text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 const token = (value: unknown) => {
   const text = typeof value === "string" ? value.toLowerCase() : "";
   return /^[a-z_]{1,20}$/.test(text) ? text : "unknown";
 };
 
-async function listCandidates(connection: SentryConnection, projects: SentryProjectRef[], since: Date, until: Date) {
+async function getPage(connection: SentryConnection, path: string, params: [string, string][], signal: AbortSignal) {
+  return fetchSentryOrganizationPage(connection, path, params, {
+    signal,
+    scopes: ["project:read", "event:read"],
+    errors: { notFound: "Sentry could not find the organization or issue. Check the connection." },
+  });
+}
+
+async function listCandidates(connection: SentryConnection, projects: SentryProjectRef[], since: Date, until: Date, signal: AbortSignal) {
   const selected = new Map(projects.map((p) => [p.id, p]));
   const candidates: Omit<SentryIssue, "eventCount" | "countCapped">[] = [];
   let cursor: string | undefined;
@@ -120,7 +70,7 @@ async function listCandidates(connection: SentryConnection, projects: SentryProj
     ];
     if (cursor) params.push(["cursor", cursor]);
 
-    const result = await getPage(connection, "issues/", params);
+    const result = await getPage(connection, "issues/", params, signal);
     const rows = issuePageSchema.safeParse(result.body);
     if (!rows.success) throw invalidResponse();
 
@@ -138,7 +88,7 @@ async function listCandidates(connection: SentryConnection, projects: SentryProj
         level: token(row.data.level),
         status: token(row.data.status),
         projectId: project.id,
-        projectName: project.name,
+        projectName: oneLine(project.name, MAX_TITLE_LENGTH) || "(unknown project)",
         url: `https://sentry.io/organizations/${encodeURIComponent(connection.organizationSlug)}/issues/${row.data.id}/`,
         lastSeen: lastSeen.toISOString(),
       });
@@ -150,7 +100,7 @@ async function listCandidates(connection: SentryConnection, projects: SentryProj
 }
 
 // Counts rows only; event payloads are never read.
-async function countEvents(connection: SentryConnection, issueId: string, since: Date, until: Date) {
+async function countEvents(connection: SentryConnection, issueId: string, since: Date, until: Date, signal: AbortSignal) {
   let count = 0;
   let cursor: string | undefined;
   for (let page = 0; page < MAX_EVENT_PAGES; page++) {
@@ -162,7 +112,15 @@ async function countEvents(connection: SentryConnection, issueId: string, since:
     ];
     if (cursor) params.push(["cursor", cursor]);
 
-    const result = await getPage(connection, `issues/${issueId}/events/`, params);
+    let result;
+    try {
+      result = await getPage(connection, `issues/${issueId}/events/`, params, signal);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "SENTRY_NOT_FOUND") {
+        return { count: 0, capped: false };
+      }
+      throw error;
+    }
     const rows = eventPageSchema.safeParse(result.body);
     if (!rows.success) throw invalidResponse();
     count += rows.data.length;
@@ -180,37 +138,53 @@ export async function fetchSentryActivity(
 ): Promise<SentryActivity> {
   if (projects.length === 0) return { issues: [] };
 
-  const candidates = await listCandidates(connection, projects, since, until);
-  const counted = new Array<{ count: number; capped: boolean }>(candidates.length);
-  let nextIndex = 0;
-  let failed = false;
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, async () => {
-      while (!failed && nextIndex < candidates.length) {
-        const index = nextIndex++;
-        try {
-          counted[index] = await countEvents(connection, candidates[index].id, since, until);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    })
-  );
+  const overallAbort = new AbortController();
+  const timeout = setTimeout(() => {
+    overallAbort.abort(new DOMException("overall timeout", "TimeoutError"));
+  }, OVERALL_TIMEOUT_MS);
 
-  // Issues listed by lastSeen overlap can have no events inside the window itself.
-  return {
-    issues: candidates.flatMap((candidate, i) =>
-      counted[i].count > 0 ? [{ ...candidate, eventCount: counted[i].count, countCapped: counted[i].capped }] : []
-    ),
-  };
+  try {
+    const candidates = await listCandidates(connection, projects, since, until, overallAbort.signal);
+    const counted = new Array<{ count: number; capped: boolean }>(candidates.length);
+    let nextIndex = 0;
+    let failed = false;
+    const workers = Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, async () => {
+        while (!failed && nextIndex < candidates.length) {
+          const index = nextIndex++;
+          try {
+            counted[index] = await countEvents(connection, candidates[index].id, since, until, overallAbort.signal);
+          } catch (error) {
+            failed = true;
+            overallAbort.abort(error);
+            throw error;
+          }
+        }
+      });
+    const workerResults = await Promise.allSettled(workers);
+    const firstFailure = workerResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (firstFailure) throw firstFailure.reason;
+
+    // Issues listed by lastSeen overlap can have no events inside the window itself.
+    return {
+      issues: candidates.flatMap((candidate, i) =>
+        counted[i].count > 0 ? [{ ...candidate, eventCount: counted[i].count, countCapped: counted[i].capped }] : []
+      ),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function formatSentryActivity(activity: SentryActivity): string {
   if (activity.issues.length === 0) return "No Sentry issues had events in this period.";
   const lines = activity.issues.map((issue) => {
     const events = `${issue.countCapped ? "at least " : ""}${issue.eventCount} event${issue.eventCount === 1 ? "" : "s"}`;
-    return `- [${issue.level}/${issue.status}] ${JSON.stringify(issue.title)} (${issue.projectName}) - ${events} in period; last seen ${issue.lastSeen}; ${issue.url}`;
+    const projectName = JSON.stringify(oneLine(issue.projectName, MAX_TITLE_LENGTH) || "(unknown project)");
+    return `- [${issue.level}/${issue.status}] ${JSON.stringify(issue.title)} (${projectName}) - ${events} in period; last seen (Sentry all-time) ${issue.lastSeen}; ${issue.url}`;
   });
-  return ["Sentry issues with events in this period (counts cover the period only):", ...lines].join("\n");
+  return [
+    "Sentry issues with events in this period (counts cover the period only).",
+    "Only up to the 25 most frequent issue candidates are listed here; this is not a complete list of all issues.",
+    ...lines,
+  ].join("\n");
 }
