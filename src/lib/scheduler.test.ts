@@ -30,12 +30,23 @@ const SLOT = "2026-10-14";
 const schedule = { enabled: true, dayOfWeek: 3, hour: 9, timezone: "UTC", periodDays: 7, autoDeliver: true };
 
 type Fx = { ownerId: string; userId: string; projectId: string; aiMode: "byok" | "managed" };
-let calls: { url: string; body: unknown }[];
+let calls: { url: string; body: unknown; auth: string | null }[];
 let activity: unknown[];
 let ai: () => Response;
 let slack: () => Response;
 let teams: () => Response;
+let sentry: (url: URL) => Response;
 let savedEnv: Record<string, string | undefined>;
+
+const SENTRY_TOKEN = "sntryu_" + "0123abcd".repeat(8);
+const sentryOk = (url: URL) =>
+  new Response(
+    JSON.stringify(
+      url.pathname.endsWith("/events/")
+        ? [{ id: "e1" }]
+        : [{ id: "100", title: "Checkout crash", level: "error", status: "unresolved", project: { id: "11" }, lastSeen: new Date().toISOString() }]
+    )
+  );
 
 function stubFetch() {
   calls = [];
@@ -52,6 +63,7 @@ function stubFetch() {
   ai = () => new Response(JSON.stringify({ choices: [{ message: { content: "Weekly summary text" } }] }));
   slack = () => new Response("ok");
   teams = () => new Response(null, { status: 202 });
+  sentry = sentryOk;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -60,8 +72,9 @@ function stubFetch() {
       try {
         body = JSON.parse(String(init?.body));
       } catch {}
-      calls.push({ url, body });
+      calls.push({ url, body, auth: new Headers(init?.headers).get("authorization") });
       const u = new URL(url);
+      if (u.hostname === "sentry.io") return sentry(u);
       if (u.hostname === "api.github.com") return new Response(JSON.stringify(u.pathname.endsWith("/commits") ? activity : []));
       if (u.hostname === "api.openai.com") return ai();
       if (u.hostname === "hooks.slack.com") return slack();
@@ -85,6 +98,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     channel?: boolean;
     channelKind?: "slack" | "teams";
     schedule?: object;
+    sentry?: boolean;
   } = {}): Promise<Fx> {
     const {
       plan = "pro",
@@ -124,7 +138,19 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
       await db.insert(aiCredentials).values({ ownerId: fx.ownerId, provider: "openai", encryptedKey: encrypt("sk-test"), last4: "test" });
     }
     const repos = provider === "gitlab" ? [{ provider: "gitlab", fullName: "group/project" }] : [{ fullName: "o/r" }];
-    const project = await createProject(owner, createProjectSchema.parse({ name: "Scheduled", repos }), 5);
+    const project = await createProject(
+      owner,
+      createProjectSchema.parse({
+        name: "Scheduled",
+        repos,
+        ...(opts.sentry ? { sentryProjects: [{ id: "11", slug: "web", name: "Web" }] } : {}),
+      }),
+      5
+    );
+    if (opts.sentry) {
+      const { sentryConnections } = await import("@/db/schema");
+      await db.insert(sentryConnections).values({ ownerId: fx.ownerId, organizationSlug: "acme", encryptedToken: encrypt(SENTRY_TOKEN) });
+    }
     fx.projectId = project.id;
     const { projects } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
@@ -188,9 +214,10 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     }
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, billingAccounts, githubConnections, gitlabConnections, gitlabInstances, projects, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, billingAccounts, githubConnections, gitlabConnections, gitlabInstances, projects, sentryConnections, usageCounters } = await import("@/db/schema");
     const owners = fixtures.map((f) => f.ownerId);
     const db = getDb();
+    await db.delete(sentryConnections).where(inArray(sentryConnections.ownerId, owners));
     await db.delete(projects).where(inArray(projects.ownerId, owners));
     await db.delete(usageCounters).where(inArray(usageCounters.ownerId, owners));
     await db.delete(aiCredentials).where(inArray(aiCredentials.ownerId, owners));
@@ -246,6 +273,50 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     );
     const [log] = await logsOf(fx);
     expect((log.sourceSnapshot as { repos: { repo: string }[] }).repos[0].repo).toBe("group/project");
+  });
+
+  it("adds selected Sentry issues using the workspace Sentry connection", async () => {
+    const fx = await setup({ sentry: true });
+    expect(await run(fx)).toMatchObject({ generated: 1, failed: 0 });
+
+    const sentryCalls = calls.filter((c) => new URL(c.url).hostname === "sentry.io");
+    expect(sentryCalls.length).toBeGreaterThan(0);
+    expect(new Set(sentryCalls.map((c) => c.auth))).toEqual(new Set([`Bearer ${SENTRY_TOKEN}`]));
+    expect(sentryCalls.every((c) => new URL(c.url).pathname.startsWith("/api/0/organizations/acme/"))).toBe(true);
+
+    const [log] = await logsOf(fx);
+    const snapshot = log.sourceSnapshot as { repos: { repo: string }[]; sentry: { issues: { id: string; title: string }[] } };
+    expect(snapshot.repos[0].repo).toBe("o/r");
+    expect(snapshot.sentry.issues).toMatchObject([{ id: "100", title: "Checkout crash" }]);
+    const aiCall = calls.find((c) => c.url.includes("api.openai.com"))!;
+    expect(JSON.stringify(aiCall.body)).toContain("Checkout crash");
+  });
+
+  it("makes no Sentry requests for a scheduled project without selected Sentry projects", async () => {
+    const fx = await setup();
+    expect(await run(fx)).toMatchObject({ generated: 1 });
+    expect(calls.filter((c) => new URL(c.url).hostname === "sentry.io")).toHaveLength(0);
+    expect("sentry" in ((await logsOf(fx))[0].sourceSnapshot as object)).toBe(false);
+  });
+
+  it("skips and notifies when the Sentry token is rejected, without charging usage", async () => {
+    const fx = await setup({ sentry: true });
+    sentry = () => new Response("no", { status: 401 });
+    expect(await run(fx)).toMatchObject({ skipped: 1, generated: 0 });
+    expect((await runRow(fx)).error).toContain("Sentry rejected the token");
+    expect(emails()).toHaveLength(1);
+    expect(await usage(fx)).toBe(0);
+    expect(await logsOf(fx)).toHaveLength(0);
+    expect(calls.filter((c) => c.url.includes("api.openai.com"))).toHaveLength(0);
+  });
+
+  it("retries when Sentry is temporarily unavailable", async () => {
+    const fx = await setup({ sentry: true });
+    sentry = () => new Response("down", { status: 503 });
+    expect(await run(fx)).toMatchObject({ retry: 1, generated: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "retry", attempts: 1 });
+    expect(emails()).toHaveLength(0);
+    expect(await logsOf(fx)).toHaveLength(0);
   });
 
   it("is idempotent for a slot, even with parallel ticks", async () => {

@@ -240,4 +240,13 @@ describe("asActivity", () => {
     expect(asActivity({ repo: "o/a", commits: "- old format" })).toBeNull();
     expect(asActivity({ repos: [{ repo: "o/a" }] })).toBeNull();
   });
+
+  it("reads historical snapshots and ones extended with Sentry issues the same way", () => {
+    const historical = { since: "a", until: "b", repos: [repoActivity("o/a", 1)] };
+    const extended = { ...historical, sentry: { issues: [] } };
+    expect(asActivity(historical)).toBe(historical);
+    expect(asActivity(extended)).toBe(extended);
+    expect(asActivity(extended)?.repos).toBe(historical.repos);
+    expect(asActivity({ since: "a", until: "b", sentry: { issues: [] } })).toBeNull();
+  });
 });

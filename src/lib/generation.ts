@@ -12,6 +12,8 @@ import { applyBudget, formatActivity, isActivityEmpty, type Activity } from "@/l
 import type { ShipLog } from "@/lib/logs";
 import type { Owner } from "@/lib/owner";
 import type { Project } from "@/lib/projects";
+import { fetchSentryActivity, formatSentryActivity, type SentryActivity } from "@/lib/sentry";
+import { getSentryConnection } from "@/lib/sentry-settings";
 import { getTemplate, requireTemplate } from "@/lib/templates";
 import { finalizeGeneration, releaseGeneration, reserveGeneration, type Reservation } from "@/lib/usage";
 
@@ -46,7 +48,8 @@ type Prepared = {
   period: { start: Date; end: Date };
   templateId: string;
   templateLabel: string;
-  activity: Activity;
+  // Top-level repository fields stay readable by asActivity; Sentry is additive.
+  snapshot: Activity & { sentry?: SentryActivity };
   system: string;
   prompt: string;
 };
@@ -76,6 +79,11 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
   const reservation = await reserveGeneration(owner.ownerId, ai.kind, ai.limits);
 
   try {
+    const sentryConnection = project.sentryProjects.length ? await getSentryConnection(owner.ownerId) : null;
+    if (project.sentryProjects.length && !sentryConnection) {
+      throw new ApiError(400, "Connect Sentry in Settings to use this project's Sentry projects.", "NO_SENTRY");
+    }
+
     const period = existing
       ? { start: existing.periodStart, end: existing.periodEnd }
       : resolvePeriod(input.period ?? {}, project.defaultPeriodDays);
@@ -120,6 +128,10 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       tone: template.tone,
       audience: template.audience,
     };
+    // Sentry only supplements repository activity, so it is fetched after the emptiness check.
+    const sentry = sentryConnection
+      ? await fetchSentryActivity(sentryConnection, project.sentryProjects, period.start, period.end)
+      : undefined;
     return {
       input,
       ai,
@@ -127,9 +139,9 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       period,
       templateId: template.id,
       templateLabel: template.label,
-      activity,
-      system: buildSystemPrompt(ctx),
-      prompt: buildUserPrompt(ctx, formatActivity(activity), period.start, period.end),
+      snapshot: sentry ? { ...activity, sentry } : activity,
+      system: buildSystemPrompt(ctx, { sentry: Boolean(sentry) }),
+      prompt: buildUserPrompt(ctx, formatActivity(activity), period.start, period.end, sentry && formatSentryActivity(sentry)),
     };
   } catch (err) {
     await releaseGeneration(reservation);
@@ -146,7 +158,7 @@ async function saveGenerated(p: Prepared, content: string, logId?: string) {
     model: p.ai.model,
     status: "ready" as const,
     error: null,
-    sourceSnapshot: p.activity,
+    sourceSnapshot: p.snapshot,
   };
   const db = getDb();
 
