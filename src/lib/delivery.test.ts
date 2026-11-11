@@ -660,6 +660,15 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
         const failed = await test(channelId);
         expect(failed.status).toBe(502);
         expect(await failed.json()).toMatchObject({ code: "DELIVERY_FAILED" });
+
+        behaviour[TEAMS_HOST] = () => {
+          throw new Error("connection reset SECRETTEAMSSIG_abc-123");
+        };
+        const unknown = await test(channelId);
+        expect(unknown.status).toBe(502);
+        const unknownText = await unknown.text();
+        expect(JSON.parse(unknownText)).toMatchObject({ code: "DELIVERY_FAILED" });
+        expect(unknownText).not.toContain("SECRETTEAMSSIG");
       });
     });
   });
