@@ -81,6 +81,7 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
           slug: attempt === 1 ? base : `${base}-${attempt}`,
           description: input.description ?? null,
           repos,
+          sentryProjects: input.sentryProjects,
           template: input.template,
           defaultPeriodDays: input.defaultPeriodDays,
           isPublicChangelog: input.isPublicChangelog,

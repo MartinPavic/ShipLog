@@ -9,6 +9,7 @@ try {
 describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () => {
   const ownerA = { userId: `test_u_${crypto.randomUUID()}`, orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
   const ownerB = { userId: "test_u_b", orgId: null, ownerId: `test_o_${crypto.randomUUID()}`, orgRole: null };
+  const ownerSentry = `test_o_${crypto.randomUUID()}`;
   const query = (over: object = {}) => logListQuerySchema.parse(over);
 
   afterAll(async () => {
@@ -18,7 +19,7 @@ describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () =>
     // Logs and versions cascade from projects.
     await getDb().delete(gitlabConnections).where(inArray(gitlabConnections.ownerId, [ownerA.ownerId, ownerB.ownerId]));
     await getDb().delete(gitlabInstances).where(inArray(gitlabInstances.ownerId, [ownerA.ownerId, ownerB.ownerId]));
-    await getDb().delete(projects).where(inArray(projects.ownerId, [ownerA.ownerId, ownerB.ownerId]));
+    await getDb().delete(projects).where(inArray(projects.ownerId, [ownerA.ownerId, ownerB.ownerId, ownerSentry]));
   });
 
   it("enforces the plan project limit even under parallel creates", async () => {
@@ -44,6 +45,27 @@ describe.skipIf(!process.env.DATABASE_URL)("projects and logs (database)", () =>
     expect(await getProject(ownerA.ownerId, theirs.id)).toBeNull();
     expect(await getProject(ownerA.ownerId, "not-a-uuid")).toBeNull();
     await expect(archiveProject(ownerA.ownerId, theirs.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("defaults, persists and isolates Sentry project selections", async () => {
+    const { createProject, updateProject, getProject } = await import("./projects");
+    const { createProjectSchema, updateProjectSchema } = await import("./validation");
+    const owner = { userId: "test_u_sentry", orgId: null, ownerId: ownerSentry, orgRole: null };
+
+    const plain = await createProject(owner, createProjectSchema.parse({ name: "No Sentry" }), 50);
+    expect(plain.sentryProjects).toEqual([]);
+
+    const selection = [{ id: "11", slug: "web", name: "Web" }, { id: "12", slug: "api", name: "API" }];
+    const withSentry = await createProject(owner, createProjectSchema.parse({ name: "With Sentry", sentryProjects: selection }), 50);
+    expect(withSentry.sentryProjects).toEqual(selection);
+
+    const renamed = await updateProject(owner.ownerId, withSentry.id, updateProjectSchema.parse({ name: "Renamed" }));
+    expect(renamed.sentryProjects).toEqual(selection);
+    const changed = await updateProject(owner.ownerId, withSentry.id, updateProjectSchema.parse({ sentryProjects: [selection[1]] }));
+    expect(changed.sentryProjects).toEqual([selection[1]]);
+    const cleared = await updateProject(owner.ownerId, withSentry.id, updateProjectSchema.parse({ sentryProjects: [] }));
+    expect(cleared.sentryProjects).toEqual([]);
+    expect(await getProject(ownerB.ownerId, withSentry.id)).toBeNull();
   });
 
   it("dedupes repos and keeps the slug on rename", async () => {

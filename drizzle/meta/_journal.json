@@ -92,6 +92,13 @@
       "when": 1794498138037,
       "tag": "0012_remove_template_custom_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794923917667,
+      "tag": "0013_sentry_connections",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,8 @@ import {
   generateSchema,
   logListQuerySchema,
   repoNameSchema,
+  sentryProjectsSchema,
+  sentrySettingsSchema,
   templateInputSchema,
   updateChannelSchema,
   updateLogSchema,
@@ -129,6 +131,68 @@ describe("createProjectSchema", () => {
 describe("updateProjectSchema", () => {
   it("is partial", () => {
     expect(updateProjectSchema.parse({ name: "New" })).toEqual({ name: "New" });
+  });
+
+  it("accepts bounded Sentry project selections on update without defaulting omitted ones", () => {
+    expect(updateProjectSchema.parse({ sentryProjects: [{ id: "42", slug: "web", name: "Web" }] })).toEqual({
+      sentryProjects: [{ id: "42", slug: "web", name: "Web" }],
+    });
+    expect(updateProjectSchema.safeParse({ sentryProjects: Array.from({ length: 21 }, (_, i) => ({ id: String(i), slug: `p${i}`, name: `P${i}` })) }).success).toBe(false);
+  });
+});
+
+describe("Sentry project selections", () => {
+  const project = { id: "123", slug: "web-app", name: "Web App" };
+
+  it("defaults to none on create and keeps up to 20 canonical entries", () => {
+    expect(createProjectSchema.parse({ name: "x" }).sentryProjects).toEqual([]);
+    const twenty = Array.from({ length: 20 }, (_, i) => ({ id: String(i + 1), slug: `p${i}`, name: `P${i}` }));
+    expect(createProjectSchema.parse({ name: "x", sentryProjects: twenty }).sentryProjects).toHaveLength(20);
+    expect(createProjectSchema.safeParse({ name: "x", sentryProjects: [...twenty, { id: "99", slug: "p99", name: "P99" }] }).success).toBe(false);
+  });
+
+  it("strips extra fields and rejects malformed or duplicate entries", () => {
+    expect(sentryProjectsSchema.parse([{ ...project, extra: "ignored" }])).toEqual([project]);
+    for (const bad of [
+      { ...project, id: "" },
+      { ...project, id: "12 3" },
+      { ...project, id: "../x" },
+      { ...project, slug: "Web App" },
+      { ...project, slug: "" },
+      { ...project, name: "" },
+      { ...project, name: "x".repeat(201) },
+      { id: 123, slug: "web", name: "Web" },
+    ]) {
+      expect(sentryProjectsSchema.safeParse([bad]).success).toBe(false);
+    }
+    expect(sentryProjectsSchema.safeParse([project, { ...project, slug: "other" }]).success).toBe(false);
+  });
+});
+
+describe("sentrySettingsSchema", () => {
+  const token = "sntryu_" + "a1b2c3d4".repeat(8);
+
+  it("normalizes the organization slug and trims the token", () => {
+    expect(sentrySettingsSchema.parse({ organizationSlug: "  My-Org_1 ", token: ` ${token} ` })).toEqual({
+      organizationSlug: "my-org_1",
+      token,
+    });
+  });
+
+  it("rejects slugs that could change the request path and malformed tokens", () => {
+    for (const organizationSlug of ["", "a/b", "..", "org?x=1", "org#x", "-org", "a b", "x".repeat(51), "https://evil.test"]) {
+      expect(sentrySettingsSchema.safeParse({ organizationSlug, token }).success).toBe(false);
+    }
+    for (const bad of ["", "short", "has space inside-a-long-enough-token", `${token}\nX`, "x".repeat(501), "tökén".repeat(10)]) {
+      expect(sentrySettingsSchema.safeParse({ organizationSlug: "org", token: bad }).success).toBe(false);
+    }
+  });
+
+  it("does not echo the token in validation messages", () => {
+    const secret = "secret token with spaces that is long";
+    const result = sentrySettingsSchema.safeParse({ organizationSlug: "org", token: secret });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).not.toContain(secret);
   });
 });
 

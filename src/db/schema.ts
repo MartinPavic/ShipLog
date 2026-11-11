@@ -17,6 +17,8 @@ import type Stripe from "stripe";
 export type RepoProvider = "github" | "gitlab";
 export type ProjectRepo = { provider?: RepoProvider; fullName: string; branch?: string };
 
+export type SentryProjectRef = { id: string; slug: string; name: string };
+
 export type ProjectSchedule = {
   enabled: boolean;
   dayOfWeek: number;
@@ -114,6 +116,13 @@ export const gitlabConnections = pgTable(
   ]
 );
 
+export const sentryConnections = pgTable("sentry_connections", {
+  ownerId: text("owner_id").primaryKey(),
+  organizationSlug: text("organization_slug").notNull(),
+  encryptedToken: text("encrypted_token").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const aiCredentials = pgTable(
   "ai_credentials",
   {
@@ -137,6 +146,7 @@ export const projects = pgTable(
     slug: text("slug").notNull(),
     description: text("description"),
     repos: jsonb("repos").$type<ProjectRepo[]>().notNull().default(sql`'[]'::jsonb`),
+    sentryProjects: jsonb("sentry_projects").$type<SentryProjectRef[]>().notNull().default(sql`'[]'::jsonb`),
     template: text("template").notNull().default("weekly_update"),
     defaultPeriodDays: integer("default_period_days").notNull().default(7),
     schedule: jsonb("schedule").$type<ProjectSchedule>(),

@@ -79,10 +79,41 @@ const repoSchema = z.object({
   }
 });
 
+export const sentryOrganizationSlugSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,49}$/, "Enter the Sentry organization slug (letters, numbers, hyphens, underscores)");
+
+// Printable ASCII only, so the value can't break out of the Authorization header.
+export const sentryTokenSchema = z
+  .string()
+  .trim()
+  .min(20, "Enter a Sentry token")
+  .max(500, "Enter a Sentry token")
+  .regex(/^[\x21-\x7e]+$/, "Enter a Sentry token");
+
+export const sentrySettingsSchema = z.object({
+  organizationSlug: sentryOrganizationSlugSchema,
+  token: sentryTokenSchema,
+});
+
+export const sentryProjectSchema = z.object({
+  id: z.string().regex(/^\d{1,20}$/, "Invalid Sentry project id"),
+  slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,99}$/, "Invalid Sentry project slug"),
+  name: z.string().trim().min(1).max(200),
+});
+
+export const sentryProjectsSchema = z
+  .array(sentryProjectSchema)
+  .max(20, "Select at most 20 Sentry projects")
+  .refine((items) => new Set(items.map((item) => item.id)).size === items.length, "Duplicate Sentry project");
+
 const projectFields = {
   name: z.string().trim().min(1, "Name is required").max(80),
   description: optionalText(500),
   repos: z.array(repoSchema).max(20),
+  sentryProjects: sentryProjectsSchema,
   template: templateIdSchema,
   defaultPeriodDays: periodDaysSchema,
   isPublicChangelog: z.boolean(),
@@ -91,6 +122,7 @@ const projectFields = {
 export const createProjectSchema = z.object({
   ...projectFields,
   repos: projectFields.repos.default([]),
+  sentryProjects: projectFields.sentryProjects.default([]),
   template: projectFields.template.default("weekly_update"),
   defaultPeriodDays: periodDaysSchema.default(7),
   isPublicChangelog: projectFields.isPublicChangelog.default(false),
