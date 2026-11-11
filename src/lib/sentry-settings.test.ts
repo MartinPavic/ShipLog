@@ -237,11 +237,14 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       fetchMock.mockReset();
 
       fetchMock
-        .mockResolvedValueOnce(sentryPage([project(1, { organization: { secret: "x" }, access: ["project:admin"], teams: [{ id: "9" }] }), project(2)], "0:100:0"))
+        .mockResolvedValueOnce(sentryPage([
+          project(1, { slug: "_internal", organization: { secret: "x" }, access: ["project:admin"], teams: [{ id: "9" }] }),
+          project(2, { slug: "-ops" }),
+        ], "0:100:0"))
         .mockResolvedValueOnce(sentryPage([project(3)]));
       expect(await listSentryProjects(testOwner.ownerId)).toEqual([
-        { id: "1", slug: "proj-1", name: "Project 1" },
-        { id: "2", slug: "proj-2", name: "Project 2" },
+        { id: "1", slug: "_internal", name: "Project 1" },
+        { id: "2", slug: "-ops", name: "Project 2" },
         { id: "3", slug: "proj-3", name: "Project 3" },
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(2);

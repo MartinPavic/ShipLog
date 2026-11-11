@@ -153,12 +153,22 @@ describe("Sentry project selections", () => {
 
   it("strips extra fields and rejects malformed or duplicate entries", () => {
     expect(sentryProjectsSchema.parse([{ ...project, extra: "ignored" }])).toEqual([project]);
+    expect(
+      sentryProjectsSchema.parse([
+        { id: "201", slug: "_internal", name: "Internal" },
+        { id: "202", slug: "-ops", name: "Ops" },
+      ])
+    ).toEqual([
+      { id: "201", slug: "_internal", name: "Internal" },
+      { id: "202", slug: "-ops", name: "Ops" },
+    ]);
     for (const bad of [
       { ...project, id: "" },
       { ...project, id: "12 3" },
       { ...project, id: "../x" },
       { ...project, slug: "Web App" },
       { ...project, slug: "" },
+      { ...project, slug: "ops/service" },
       { ...project, name: "" },
       { ...project, name: "x".repeat(201) },
       { id: 123, slug: "web", name: "Web" },

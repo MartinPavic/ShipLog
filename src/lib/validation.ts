@@ -100,7 +100,7 @@ export const sentrySettingsSchema = z.object({
 
 export const sentryProjectSchema = z.object({
   id: z.string().regex(/^\d{1,20}$/, "Invalid Sentry project id"),
-  slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,99}$/, "Invalid Sentry project slug"),
+  slug: z.string().regex(/^[a-z0-9_-]{1,100}$/, "Invalid Sentry project slug"),
   name: z.string().trim().min(1).max(200),
 });
 
