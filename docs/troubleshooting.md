@@ -38,6 +38,11 @@ Settings. This is also needed after changing `ENCRYPTION_KEY`. A "redirected the
 slug or token does not point at sentry.io; fix it and reconnect. Scheduled runs hitting these errors are skipped and the
 project creator is notified.
 
+**A run fails with `SENTRY_PROJECT_UNAVAILABLE`.**
+ShipLog rechecks selected Sentry project IDs at generation time before fetching issues. One or more selected projects
+are no longer accessible with the current token (deleted project, revoked access, or token changed). Reconnect Sentry in
+Settings if needed, then open the project settings and remove or reselect unavailable Sentry projects.
+
 **A Free workspace can't create a second project.**
 That is the plan limit. The demo project from `npm run seed` counts too: remove it with `npm run seed -- --remove`.
 

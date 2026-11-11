@@ -13,7 +13,7 @@ import type { ShipLog } from "@/lib/logs";
 import type { Owner } from "@/lib/owner";
 import type { Project } from "@/lib/projects";
 import { fetchSentryActivity, formatSentryActivity, type SentryActivity } from "@/lib/sentry";
-import { getSentryConnection } from "@/lib/sentry-settings";
+import { canonicalizeSentryProjects, getSentryConnection } from "@/lib/sentry-settings";
 import { getTemplate, requireTemplate } from "@/lib/templates";
 import { finalizeGeneration, releaseGeneration, reserveGeneration, type Reservation } from "@/lib/usage";
 
@@ -79,8 +79,11 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
   const reservation = await reserveGeneration(owner.ownerId, ai.kind, ai.limits);
 
   try {
-    const sentryConnection = project.sentryProjects.length ? await getSentryConnection(owner.ownerId) : null;
-    if (project.sentryProjects.length && !sentryConnection) {
+    const sentryProjects = project.sentryProjects.length
+      ? await canonicalizeSentryProjects(owner.ownerId, project.sentryProjects)
+      : [];
+    const sentryConnection = sentryProjects.length ? await getSentryConnection(owner.ownerId) : null;
+    if (sentryProjects.length && !sentryConnection) {
       throw new ApiError(400, "Connect Sentry in Settings to use this project's Sentry projects.", "NO_SENTRY");
     }
 
@@ -130,7 +133,7 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
     };
     // Sentry only supplements repository activity, so it is fetched after the emptiness check.
     const sentry = sentryConnection
-      ? await fetchSentryActivity(sentryConnection, project.sentryProjects, period.start, period.end)
+      ? await fetchSentryActivity(sentryConnection, sentryProjects, period.start, period.end)
       : undefined;
     return {
       input,

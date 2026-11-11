@@ -42,7 +42,9 @@ const SENTRY_TOKEN = "sntryu_" + "0123abcd".repeat(8);
 const sentryOk = (url: URL) =>
   new Response(
     JSON.stringify(
-      url.pathname.endsWith("/events/")
+      url.pathname.endsWith("/projects/")
+        ? [{ id: "11", slug: "web", name: "Web" }]
+        : url.pathname.endsWith("/events/")
         ? [{ id: "e1" }]
         : [{ id: "100", title: "Checkout crash", level: "error", status: "unresolved", project: { id: "11" }, lastSeen: new Date().toISOString() }]
     )
@@ -319,6 +321,23 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect(emails()).toHaveLength(1);
     expect(await usage(fx)).toBe(0);
     expect(await logsOf(fx)).toHaveLength(0);
+  });
+
+  it("skips and notifies when a selected Sentry project is no longer accessible, without charging usage", async () => {
+    const fx = await setup({ sentry: true });
+    sentry = (url) => {
+      if (url.pathname.endsWith("/projects/")) {
+        return new Response(JSON.stringify([{ id: "22", slug: "api", name: "API" }]));
+      }
+      return sentryOk(url);
+    };
+    expect(await run(fx)).toMatchObject({ skipped: 1, generated: 0, retry: 0, failed: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "skipped" });
+    expect((await runRow(fx)).error).toContain("selected Sentry project is not accessible");
+    expect(emails()).toHaveLength(1);
+    expect(await usage(fx)).toBe(0);
+    expect(await logsOf(fx)).toHaveLength(0);
+    expect(calls.filter((c) => c.url.includes("api.openai.com"))).toHaveLength(0);
   });
 
   it("retries when Sentry is temporarily unavailable", async () => {

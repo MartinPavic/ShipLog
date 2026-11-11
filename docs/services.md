@@ -129,14 +129,16 @@ delivery are not supported.
 Each report counts events for an issue only inside the report window. The issue's lifetime count is never used. ShipLog
 reads a bounded number of issues and event pages per run (at most 25 issues), so on very busy projects the issue and
 event lists are capped: counts that hit the cap are lower bounds, marked "at least" in the context given to the model,
-which is also told the list is not complete. Selections store only the Sentry project ID, slug and name, and every ID is
-verified against the connected organization when you save the selection. If Sentry later refuses access, the run fails
-with a clear Sentry error instead of silently omitting the source.
+which is also told the list is not complete. Selections store only the Sentry project ID, slug and name. IDs are
+canonicalized against the connected organization when you save the selection and re-validated again at generation time
+before fetching issues. If any selected project is inaccessible or no longer accessible with the current token, the run
+fails with `SENTRY_PROJECT_UNAVAILABLE` instead of silently omitting the source.
 
 Disconnecting Sentry deletes the stored token but keeps each project's selections, so reconnecting restores them.
 Until then, runs for projects with selections fail with a prompt to connect Sentry; scheduled runs are skipped and the
-project creator is notified. If the stored token can no longer be read (for example after changing `ENCRYPTION_KEY`),
-ShipLog asks you to reconnect Sentry. Sentry adds no environment variable.
+project creator is notified. If a selected project was removed, access was revoked, or the stored token can no longer be
+read (for example after changing `ENCRYPTION_KEY`), reconnect Sentry and then remove or reselect unavailable projects in
+project settings. Sentry adds no environment variable.
 
 ## Resend (optional)
 

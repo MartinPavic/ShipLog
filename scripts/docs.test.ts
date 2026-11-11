@@ -167,6 +167,9 @@ describe("documentation", () => {
     expect(section.toLowerCase()).toMatch(/disconnect[^.]*(keep|preserv|retain)/);
     expect(section.toLowerCase()).toContain("repository");
     expect(section.toLowerCase()).toContain("reconnect");
+    expect(section.toLowerCase()).toMatch(/re-?check|re-?validat|re-?canonical/);
+    expect(section.toLowerCase()).toMatch(/generation|run time|before fetching/);
+    expect(section.toLowerCase()).toMatch(/inaccessible|no longer accessible|removed access/);
     expect(section).toMatch(/not (supported|a Sentry-only)|does not (support|send|deliver)/i);
     expect(section.toLowerCase()).toContain("oauth");
     expect(section.toLowerCase()).toContain("self-hosted");
@@ -179,6 +182,9 @@ describe("documentation", () => {
     expect(read("docs/configuration.md")).toMatch(/no (new|Sentry)[^\n]*(variable|environment)/i);
     expect(read("docs/upgrading.md")).toMatch(/sentry_connections/);
     expect(read("CHANGELOG.md")).toMatch(/Sentry/);
-    expect(read("docs/troubleshooting.md")).toMatch(/Sentry/);
+    const troubleshooting = read("docs/troubleshooting.md");
+    expect(troubleshooting).toMatch(/Sentry/);
+    expect(troubleshooting.toLowerCase()).toMatch(/selected sentry project/);
+    expect(troubleshooting.toLowerCase()).toMatch(/remove|reconnect/);
   });
 });
