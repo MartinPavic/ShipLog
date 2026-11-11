@@ -10,14 +10,16 @@ import { emailLayout } from "@/lib/email-template";
 import { isAllowedWebhook, webhookHint } from "@/lib/webhooks";
 import type { CreateChannelInput } from "@/lib/validation";
 
-export type ChannelKind = "slack" | "discord" | "email";
+export type ChannelKind = "slack" | "discord" | "teams" | "email";
 export type ChannelConfig = { webhookUrl: string } | { recipients: string[] };
 export type DeliveryMessage = { title: string; markdown: string };
 
 const MAX_CHANNELS = 10;
 const SLACK_LIMIT = 30_000;
 const DISCORD_EMBED_LIMIT = 4_000;
-const LABELS: Record<ChannelKind, string> = { slack: "Slack", discord: "Discord", email: "Email" };
+// Teams rejects messages over ~28 KB (28,672 bytes); stay well under it for the whole JSON body.
+const TEAMS_LIMIT_BYTES = 24_000;
+const LABELS: Record<ChannelKind, string> = { slack: "Slack", discord: "Discord", teams: "Teams", email: "Email" };
 
 export class DeliveryError extends Error {
   constructor(message: string, readonly unknown = false) {
@@ -52,6 +54,37 @@ async function postJson(url: string, payload: unknown, label: string): Promise<v
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
+function teamsPayload(title: string, markdown: string) {
+  // Adaptive Card text supports bold but not headings.
+  const text = markdown.replace(/^#{1,6}[ \t]+(.+?)[ \t]*$/gm, "**$1**");
+  const build = (body: string) => ({
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: {
+          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+          type: "AdaptiveCard",
+          version: "1.2",
+          msteams: { width: "Full" },
+          body: [
+            { type: "TextBlock", text: truncate(title, 256), weight: "Bolder", size: "Large", wrap: true },
+            { type: "TextBlock", text: body, wrap: true },
+          ],
+        },
+      },
+    ],
+  });
+  let max = text.length;
+  let payload = build(text);
+  while (Buffer.byteLength(JSON.stringify(payload)) > TEAMS_LIMIT_BYTES) {
+    max = Math.floor(max * 0.9);
+    payload = build(truncate(text, max));
+  }
+  return payload;
+}
+
 export async function sendMessage(kind: ChannelKind, config: ChannelConfig, message: DeliveryMessage): Promise<void> {
   if (kind === "email") {
     if (!isEmailConfigured()) throw new DeliveryError("Email delivery is not configured on this server.");
@@ -77,6 +110,8 @@ export async function sendMessage(kind: ChannelKind, config: ChannelConfig, mess
 
   if (kind === "slack") {
     await postJson(webhookUrl, { text: truncate(`*${message.title}*\n\n${toSlackMrkdwn(message.markdown)}`, SLACK_LIMIT) }, "Slack");
+  } else if (kind === "teams") {
+    await postJson(webhookUrl, teamsPayload(message.title, message.markdown), "Teams");
   } else {
     await postJson(
       webhookUrl,

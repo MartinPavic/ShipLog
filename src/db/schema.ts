@@ -228,7 +228,7 @@ export const deliveryChannels = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["slack", "discord", "email"] }).notNull(),
+    kind: text("kind", { enum: ["slack", "discord", "teams", "email"] }).notNull(),
     encryptedConfig: text("encrypted_config").notNull(),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: createdAt(),

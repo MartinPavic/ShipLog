@@ -27,6 +27,8 @@ vi.mock("@/lib/owner", async (importOriginal) => {
 
 const SLACK = "https://hooks.slack.com/services/T0AAAA/B0BBBB/secretslacktoken1234";
 const DISCORD = "https://discord.com/api/webhooks/123456789/secretdiscordtoken5678";
+const TEAMS_HOST = "prod-12.westus.logic.azure.com";
+const TEAMS = `https://${TEAMS_HOST}:443/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
 
 type Call = { url: string; body: unknown };
 let calls: Call[];
@@ -48,6 +50,7 @@ function stubFetch() {
       if (behaviour[host]) return behaviour[host]();
       if (host === "hooks.slack.com") return new Response("ok");
       if (host === "discord.com") return new Response(null, { status: 204 });
+      if (host === TEAMS_HOST) return new Response(null, { status: 202 });
       if (host === "api.resend.com") return new Response(JSON.stringify({ id: "em_1" }));
       throw new Error(`Unexpected request to ${url}`);
     })
@@ -449,6 +452,172 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
       const failed = await test(ids.slack);
       expect(failed.status).toBe(502);
       expect(await failed.json()).toMatchObject({ code: "DELIVERY_FAILED" });
+    });
+  });
+
+  describe("teams", () => {
+    const teamsBody = (call: Call) =>
+      call.body as {
+        type: string;
+        attachments: { contentType: string; contentUrl: null; content: { type: string; body: { type: string; text: string }[] } }[];
+      };
+
+    async function withTeamsChannel(run: (channelId: string) => Promise<void>) {
+      const { channel } = await (await addChannel({ kind: "teams", webhookUrl: TEAMS })).json();
+      try {
+        await run(channel.id);
+      } finally {
+        const { getDb } = await import("@/db");
+        const { deliveryChannels } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        await getDb().delete(deliveryChannels).where(eq(deliveryChannels.id, channel.id));
+      }
+    }
+
+    it("stores the signed URL encrypted and only returns a safe hint", async () => {
+      const res = await addChannel({ kind: "teams", webhookUrl: TEAMS });
+      expect(res.status).toBe(201);
+      const { channel } = await res.json();
+      try {
+        expect(channel).toMatchObject({ kind: "teams", enabled: true, hint: `${TEAMS_HOST}/…/cdef` });
+        expect(JSON.stringify(channel)).not.toContain("SECRETTEAMSSIG");
+
+        const { getDb } = await import("@/db");
+        const { deliveryChannels } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        const [row] = await getDb().select().from(deliveryChannels).where(eq(deliveryChannels.id, channel.id));
+        expect(row.kind).toBe("teams");
+        expect(row.encryptedConfig).not.toContain("SECRETTEAMSSIG");
+        expect(row.encryptedConfig).not.toContain("logic.azure.com");
+        const { decrypt } = await import("@/lib/crypto");
+        expect(JSON.parse(decrypt(row.encryptedConfig))).toEqual({ webhookUrl: TEAMS });
+
+        const { GET } = await channelsRoute();
+        const list = await (await GET(new Request("http://x"), ctx(ids.project))).json();
+        expect(JSON.stringify(list)).not.toContain("SECRETTEAMSSIG");
+      } finally {
+        const { getDb } = await import("@/db");
+        const { deliveryChannels } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        await getDb().delete(deliveryChannels).where(eq(deliveryChannels.id, channel.id));
+      }
+    });
+
+    it("rejects non-Workflows URLs without echoing the signature", async () => {
+      for (const webhookUrl of [
+        "https://evil.example.com/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?sig=SECRETTEAMSSIG_abc",
+        TEAMS.replace("https:", "http:"),
+        TEAMS.replace(":443", ":8443"),
+        TEAMS.replace("https://", "https://user:pw@"),
+        SLACK,
+      ]) {
+        const res = await addChannel({ kind: "teams", webhookUrl });
+        expect(res.status).toBe(400);
+        const text = await res.text();
+        expect(text).toContain("VALIDATION");
+        expect(text).not.toContain("SECRETTEAMSSIG");
+      }
+    });
+
+    it("validates a replacement URL against the Teams allow-list", async () => {
+      const { updateChannel } = await import("./delivery");
+      await withTeamsChannel(async (channelId) => {
+        const rotated = TEAMS.replace("SECRETTEAMSSIG_abc-123", "ROTATEDSIG_xyz-789");
+        const updated = await updateChannel(ids.project, channelId, { webhookUrl: rotated });
+        expect(JSON.stringify(updated)).not.toContain("ROTATEDSIG");
+
+        const bad = "https://evil.example.com/workflows/x/triggers/manual/paths/invoke?sig=LEAKEDSIG_abc";
+        const error = await updateChannel(ids.project, channelId, { webhookUrl: bad }).catch((err: Error) => err);
+        expect(error).toMatchObject({ status: 400 });
+        expect((error as Error).message).not.toContain("LEAKEDSIG");
+        expect((error as Error).message).toContain("Teams");
+      });
+    });
+
+    it("posts a Workflows adaptive card with the title and body to the signed URL", async () => {
+      await withTeamsChannel(async (channelId) => {
+        const log = await insertLog();
+        const { results } = await (await deliver(log.id, { channelIds: [channelId] })).json();
+        expect(results).toMatchObject([{ kind: "teams", status: "sent", error: null }]);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe(TEAMS);
+        const payload = teamsBody(calls[0]);
+        expect(payload.type).toBe("message");
+        expect(payload.attachments).toHaveLength(1);
+        expect(payload.attachments[0]).toMatchObject({
+          contentType: "application/vnd.microsoft.card.adaptive",
+          contentUrl: null,
+          content: { type: "AdaptiveCard" },
+        });
+        const [title, body] = payload.attachments[0].content.body;
+        expect(title).toMatchObject({ type: "TextBlock", text: "Weekly update" });
+        expect(body.text).toContain("**Shipped**");
+        expect(body.text).toContain("**Search** is live");
+        expect(body.text).not.toContain("# Shipped");
+
+        const { listDeliveries } = await import("./delivery");
+        expect((await listDeliveries(log.id))[0]).toMatchObject({ kind: "teams", status: "sent", error: null });
+      });
+    });
+
+    it("truncates long and multi-byte messages below the 28 KB limit", async () => {
+      await withTeamsChannel(async (channelId) => {
+        const log = await insertLog(ids.project, proOwner, { content: "日本語のテキスト ".repeat(6000) });
+        await deliver(log.id, { channelIds: [channelId] });
+        const bytes = Buffer.byteLength(JSON.stringify(calls[0].body));
+        expect(bytes).toBeLessThanOrEqual(24_000);
+        const body = teamsBody(calls[0]).attachments[0].content.body[1];
+        expect(body.text.endsWith("…")).toBe(true);
+      });
+    });
+
+    it("maps HTTP failures to friendly errors that never contain the signature", async () => {
+      await withTeamsChannel(async (channelId) => {
+        const log = await insertLog();
+        const expectations: [number, string][] = [
+          [404, "no longer knows this webhook"],
+          [403, "refused the webhook"],
+          [429, "rate limiting"],
+          [502, "having problems"],
+          [400, "rejected the message (HTTP 400)"],
+        ];
+        for (const [status, text] of expectations) {
+          behaviour[TEAMS_HOST] = () => new Response("secret body SECRETTEAMSSIG_abc-123", { status });
+          const { results } = await (await deliver(log.id, { channelIds: [channelId] })).json();
+          expect(results[0]).toMatchObject({ kind: "teams", status: "failed" });
+          expect(results[0].error).toContain("Teams");
+          expect(results[0].error).toContain(text);
+          expect(results[0].error).not.toContain("SECRETTEAMSSIG");
+        }
+      });
+    });
+
+    it("rejects redirects and treats timeouts and network errors as unknown", async () => {
+      await withTeamsChannel(async (channelId) => {
+        const log = await insertLog();
+        for (const failure of [
+          new TypeError("fetch failed: redirect mode is set to error"),
+          new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+        ]) {
+          behaviour[TEAMS_HOST] = () => {
+            throw failure;
+          };
+          const { results } = await (await deliver(log.id, { channelIds: [channelId] })).json();
+          expect(results[0]).toMatchObject({ kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." });
+        }
+        const init = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+        expect(init.redirect).toBe("error");
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+      });
+    });
+
+    it("refuses to send a stored Teams URL that is no longer allowed", async () => {
+      const { sendMessage } = await import("./delivery");
+      await expect(
+        sendMessage("teams", { webhookUrl: "https://evil.example.com/x?sig=SECRETTEAMSSIG_abc" }, { title: "t", markdown: "m" })
+      ).rejects.toMatchObject({ message: "This webhook URL is not allowed." });
+      expect(calls).toHaveLength(0);
     });
   });
 });
