@@ -62,6 +62,22 @@ export function ProjectGenerate({
   const periodValid = mode === "days" ? days >= 1 && days <= 90 : Boolean(from && to && from <= to);
   const FormContainer = projectField ? "div" : Card;
   const FormContent = projectField ? "div" : CardContent;
+  const periodSelector = (
+    <Select
+      value={mode}
+      items={PERIOD_ITEMS}
+      onValueChange={(v) => v && setMode(v as "days" | "range")}
+      disabled={running}
+    >
+      <SelectTrigger id="period-mode" className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="days">Last N days</SelectItem>
+        <SelectItem value="range">Date range</SelectItem>
+      </SelectContent>
+    </Select>
+  );
 
   async function run(request: GenerateRequest) {
     const controller = new AbortController();
@@ -108,7 +124,7 @@ export function ProjectGenerate({
           <CardTitle>Generate a ship log</CardTitle>
           <UsageMeter used={usage.used} limit={usage.limit} />
         </CardHeader>}
-        <FormContent className="space-y-4">
+        <FormContent className={projectField ? "space-y-5 rounded-md border border-brass/30 bg-card/60 p-4 sm:p-5" : "space-y-4"}>
           {setupMessage && projectField}
           {setupMessage ? (
             <p className="text-sm text-muted-foreground">
@@ -119,8 +135,8 @@ export function ProjectGenerate({
             </p>
           ) : (
             <>
-              <div className={`grid gap-4 ${projectField ? "md:grid-cols-3" : "sm:grid-cols-2"}`}>
-                {projectField}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {projectField && <div className="sm:col-span-2">{projectField}</div>}
                 <div className="min-w-0 space-y-2">
                   <Label>Template</Label>
                   <Select
@@ -141,26 +157,52 @@ export function ProjectGenerate({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Period</Label>
-                  <Select
-                    value={mode}
-                    items={PERIOD_ITEMS}
-                    onValueChange={(v) => v && setMode(v as "days" | "range")}
-                    disabled={running}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="days">Last N days</SelectItem>
-                      <SelectItem value="range">Date range</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {projectField ? (
+                  <fieldset className="min-w-0 space-y-2">
+                    <legend className="text-sm leading-none font-medium">Period</legend>
+                    <div className={`grid gap-3 ${mode === "days" ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_7rem]" : "grid-cols-1 sm:grid-cols-2"}`}>
+                      <div className={mode === "range" ? "col-span-1 sm:col-span-2" : "min-w-0"}>
+                        <Label htmlFor="period-mode" className="sr-only">Period</Label>
+                        {periodSelector}
+                      </div>
+                      {mode === "days" ? (
+                        <div className="relative min-w-0">
+                          <Label htmlFor="period-days" className="sr-only">Days (1–90)</Label>
+                          <Input
+                            id="period-days"
+                            type="number"
+                            min={1}
+                            max={90}
+                            className="w-full pr-12"
+                            value={days}
+                            disabled={running}
+                            onChange={(e) => setDays(Number(e.target.value))}
+                          />
+                          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">days</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="min-w-0 space-y-2">
+                            <Label htmlFor="period-from">From</Label>
+                            <Input id="period-from" type="date" max={today} value={from} disabled={running} onChange={(e) => setFrom(e.target.value)} />
+                          </div>
+                          <div className="min-w-0 space-y-2">
+                            <Label htmlFor="period-to">To</Label>
+                            <Input id="period-to" type="date" max={today} value={to} disabled={running} onChange={(e) => setTo(e.target.value)} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </fieldset>
+                ) : (
+                  <div className="min-w-0 space-y-2">
+                    <Label htmlFor="period-mode">Period</Label>
+                    {periodSelector}
+                  </div>
+                )}
               </div>
 
-              {mode === "days" ? (
+              {!projectField && mode === "days" ? (
                 <div className="space-y-2">
                   <Label htmlFor="period-days">Days (1–90)</Label>
                   <Input
@@ -174,7 +216,7 @@ export function ProjectGenerate({
                     onChange={(e) => setDays(Number(e.target.value))}
                   />
                 </div>
-              ) : (
+              ) : !projectField ? (
                 <div className="flex flex-wrap gap-4">
                   <div className="min-w-0 space-y-2">
                     <Label htmlFor="period-from">From</Label>
@@ -185,9 +227,9 @@ export function ProjectGenerate({
                     <Input id="period-to" type="date" max={today} value={to} disabled={running} onChange={(e) => setTo(e.target.value)} />
                   </div>
                 </div>
-              )}
+              ) : null}
 
-              <div className="flex gap-2">
+              <div className={projectField ? "flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end" : "flex gap-2"}>
                 <Button className={projectField ? "w-full sm:w-auto" : undefined} onClick={generate} disabled={running || !periodValid}>
                   {running ? "Generating..." : "Generate"}
                 </Button>

@@ -61,6 +61,7 @@ describe("ProjectGenerate", () => {
     expect(html).toContain("Generate a ship log");
     expect(html).toContain("3 / 50 generations this month");
     expect(html).toContain('data-slot="card"');
+    expect(html).not.toContain("<fieldset");
   });
 
   it("embeds the project field without a duplicate card, heading, or quota meter", () => {
@@ -70,6 +71,48 @@ describe("ProjectGenerate", () => {
     expect(html).not.toContain("generations this month");
     expect(html).not.toContain('data-slot="card"');
     expect(html.indexOf("Project picker")).toBeLessThan(html.indexOf("Template"));
+  });
+
+  it("groups the period selector and day count in the compact form", () => {
+    const html = render({ projectField: <label>Project picker</label> });
+    expect(html).toMatch(/<fieldset[^>]*>[\s\S]*<legend class="text-sm leading-none font-medium">Period<\/legend>[\s\S]*Last N days[\s\S]*Days \(1–90\)[\s\S]*<\/fieldset>/);
+    expect(html).toContain('class="grid gap-3 grid-cols-1 sm:grid-cols-[minmax(0,1fr)_7rem]"');
+    expect(html.indexOf("Project picker")).toBeLessThan(html.indexOf("Template"));
+  });
+
+  it("groups the date range fields with Period instead of showing the day count", () => {
+    state.values[1] = "range";
+    state.values[3] = "2026-11-01";
+    state.values[4] = "2026-11-07";
+    const html = render({ projectField: <label>Project picker</label> });
+    expect(html).toMatch(/<fieldset[^>]*>[\s\S]*<legend[^>]*>Period<\/legend>[\s\S]*From[\s\S]*To[\s\S]*<\/fieldset>/);
+    expect(html).toContain('class="grid gap-3 grid-cols-1 sm:grid-cols-2"');
+    expect(html).toContain('class="col-span-1 sm:col-span-2"');
+    expect(html).not.toContain("Days (1–90)");
+  });
+
+  it("disables Generate when the compact form has an invalid day count", () => {
+    const html = render({ projectField: <label>Project picker</label>, defaultDays: 0 });
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Generate<\/button>/);
+  });
+
+  it("stacks Generate and Cancel actions in compact mode while running", () => {
+    state.values[5] = true;
+    const html = render({ projectField: <label>Project picker</label> });
+    expect(html).toMatch(/<div class="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">[\s\S]*>Generating\.\.\.<\/button>[\s\S]*>Cancel<\/button>/);
+  });
+
+  it("keeps the project picker visible when compact generation is blocked", () => {
+    const html = render({ projectField: <label>Project picker</label>, setupMessage: "Connect GitHub first." });
+    expect(html).toContain("Project picker");
+    expect(html).toContain("Connect GitHub first.");
+    expect(html).not.toContain("Template");
+    expect(html).not.toContain("Period");
+    expect(html).not.toContain("Last N days");
+    expect(html).not.toContain("Days (1–90)");
+    expect(html).not.toContain(">From</label>");
+    expect(html).not.toContain(">To</label>");
+    expect(html).not.toContain(">Generate<");
   });
 
   it("offers review and share after successful generation without changing the generation contract", async () => {
