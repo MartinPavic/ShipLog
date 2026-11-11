@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { SentryProjectRef } from "@/db/schema";
 import { type TemplateView } from "@/lib/ai/templates";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
 import { WEEKDAYS } from "@/lib/schedule";
@@ -41,6 +42,7 @@ export type ProjectFormValues = {
   name: string;
   description: string;
   repos: { provider?: "github" | "gitlab"; fullName: string; branch?: string }[];
+  sentryProjects: SentryProjectRef[];
   template: string;
   defaultPeriodDays: number;
   isPublicChangelog: boolean;
@@ -51,6 +53,7 @@ const EMPTY: ProjectFormValues = {
   name: "",
   description: "",
   repos: [],
+  sentryProjects: [],
   template: "weekly_update",
   defaultPeriodDays: 7,
   isPublicChangelog: false,
@@ -222,6 +225,130 @@ function RepoPicker({ value, onChange }: { value: Repo[]; onChange: (repos: Repo
       )}
     </div>
   );
+}
+
+const MAX_SENTRY_PROJECTS = 20;
+
+export function SentryProjectPicker({
+  value,
+  onChange,
+  connected,
+}: {
+  value: SentryProjectRef[];
+  onChange: (projects: SentryProjectRef[]) => void;
+  connected: boolean;
+}) {
+  const [available, setAvailable] = useState<SentryProjectRef[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("");
+
+  const selected = new Set(value.map((project) => project.id));
+  const atLimit = value.length >= MAX_SENTRY_PROJECTS;
+  const listed = new Set((available ?? []).map((project) => project.id));
+  const unavailable = available ? value.filter((project) => !listed.has(project.id)) : [];
+  const visible = (available ?? []).filter((project) =>
+    `${project.name} ${project.slug}`.toLowerCase().includes(filter.trim().toLowerCase())
+  );
+
+  async function browse() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest<{ projects: SentryProjectRef[] }>("/api/sentry/projects", "GET");
+      setAvailable(data.projects);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load Sentry projects");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {value.length > 0 && (
+        <ul className="space-y-2">
+          {value.map((project) => (
+            <li key={project.id} className="flex items-center gap-2">
+              <span className="flex-1 truncate text-sm font-medium">{project.name}</span>
+              <span className="text-xs text-muted-foreground">{project.slug}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={`Remove ${project.name}`}
+                onClick={() => onChange(value.filter((item) => item.id !== project.id))}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!connected && (
+        <p className="text-sm text-muted-foreground">
+          Sentry is not connected for this workspace. A workspace admin can connect it in Settings.
+          {value.length > 0 ? " Saved selections are kept." : ""}
+        </p>
+      )}
+
+      {connected && unavailable.length > 0 && (
+        <p className="text-sm text-danger">
+          {unavailable.map((project) => project.name).join(", ")}{" "}
+          {unavailable.length === 1 ? "is" : "are"} no longer available from Sentry. Remove{" "}
+          {unavailable.length === 1 ? "it" : "them"} or ask a workspace admin to reconnect Sentry in Settings.
+        </p>
+      )}
+
+      {connected && !available && (
+        <Button type="button" variant="outline" size="sm" disabled={loading} onClick={browse}>
+          {loading ? "Loading..." : "Browse Sentry projects"}
+        </Button>
+      )}
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      {connected && available && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <Input placeholder="Filter Sentry projects" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <ul className="max-h-56 space-y-1 overflow-y-auto">
+            {visible.map((project) => (
+              <li key={project.id}>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(project.id)}
+                    disabled={!selected.has(project.id) && atLimit}
+                    onChange={(e) =>
+                      onChange(e.target.checked ? [...value, project] : value.filter((item) => item.id !== project.id))
+                    }
+                  />
+                  <span className="truncate">{project.name}</span>
+                  <span className="text-xs text-muted-foreground">{project.slug}</span>
+                </label>
+              </li>
+            ))}
+            {visible.length === 0 && <li className="text-sm text-muted-foreground">No matches</li>}
+          </ul>
+          {atLimit && <p className="text-xs text-muted-foreground">You can link up to {MAX_SENTRY_PROJECTS} Sentry projects.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// An unchanged selection is left out so saving other fields never needs a live Sentry connection.
+export function projectUpdateBody(
+  values: ProjectFormValues,
+  initial: ProjectFormValues
+): Omit<ProjectFormValues, "sentryProjects"> & { sentryProjects?: SentryProjectRef[] } {
+  const unchanged =
+    values.sentryProjects.length === initial.sentryProjects.length &&
+    values.sentryProjects.every((project, i) => project.id === initial.sentryProjects[i].id);
+  if (!unchanged) return values;
+  const { sentryProjects: _kept, ...rest } = values;
+  void _kept;
+  return rest;
 }
 
 const WEEKDAY_ITEMS = Object.fromEntries(WEEKDAYS.map((d, i) => [String(i), d]));
@@ -418,7 +545,7 @@ type Props = (
       lastRun: LastRun;
       canTakeOver: boolean;
     }
-) & { templates: TemplateView[] };
+) & { templates: TemplateView[]; sentryConnected: boolean };
 
 export function ProjectForm(props: Props) {
   const router = useRouter();
@@ -441,7 +568,12 @@ export function ProjectForm(props: Props) {
         router.push(`/dashboard/projects/${project.id}`);
         return;
       }
-      await apiRequest(`/api/projects/${props.projectId}`, "PATCH", values);
+      const { project } = await apiRequest<{ project: { sentryProjects: SentryProjectRef[] } }>(
+        `/api/projects/${props.projectId}`,
+        "PATCH",
+        projectUpdateBody(values, props.initial)
+      );
+      set("sentryProjects", project.sentryProjects);
       setMessage({ text: "Project saved", error: false });
       router.refresh();
     } catch (err) {
@@ -480,6 +612,14 @@ export function ProjectForm(props: Props) {
             <p className="text-xs text-muted-foreground">
               Leave empty to use your most recently pushed repositories.
             </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Sentry projects (optional)</Label>
+            <SentryProjectPicker
+              value={values.sentryProjects}
+              onChange={(sentryProjects) => set("sentryProjects", sentryProjects)}
+              connected={props.sentryConnected}
+            />
           </div>
         </CardContent>
       </Card>

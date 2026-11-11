@@ -1,4 +1,4 @@
-import { AiCard, GitLabCard, GithubCard } from "@/components/settings-form";
+import { AiCard, GitLabCard, GithubCard, SentryCard } from "@/components/settings-form";
 import { ManageBillingButton, UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +118,8 @@ export default async function SettingsPage({
       ) : (
         <AiCard ai={status.ai} canManage={canManage} />
       )}
+
+      {canManage && <SentryCard sentry={status.sentry} />}
 
       {features().billing && (
         <BillingCard

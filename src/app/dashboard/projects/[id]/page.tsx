@@ -19,6 +19,7 @@ import { getOwnerSlug } from "@/lib/owner-profile";
 import { getPlanLimits } from "@/lib/plans";
 import { getProject } from "@/lib/projects";
 import { getLastRun } from "@/lib/scheduler";
+import { getSentryStatus } from "@/lib/sentry-settings";
 import { getSetupStatus } from "@/lib/settings";
 import { listTemplates } from "@/lib/templates";
 import { getUsageMeter } from "@/lib/usage";
@@ -93,6 +94,7 @@ export default async function ProjectPage({
   const templates = await listTemplates(owner.ownerId);
   const ownerSlug = tab === "settings" && project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
   const lastRun = tab === "settings" ? await getLastRun(project.id) : null;
+  const sentryConnected = tab === "settings" && (await getSentryStatus(owner.ownerId)).configured;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -161,12 +163,14 @@ export default async function ProjectPage({
               name: project.name,
               description: project.description ?? "",
               repos: project.repos,
+              sentryProjects: project.sentryProjects,
               template: project.template,
               defaultPeriodDays: project.defaultPeriodDays,
               isPublicChangelog: project.isPublicChangelog,
               schedule: project.schedule ?? DEFAULT_SCHEDULE,
             }}
             schedulingAllowed={limits.scheduling}
+            sentryConnected={sentryConnected}
             canTakeOver={isAdmin(owner) && project.createdBy !== owner.userId}
             lastRun={lastRun ? { slot: lastRun.slot, status: lastRun.status, error: lastRun.error } : null}
           />

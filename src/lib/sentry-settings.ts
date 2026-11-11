@@ -144,3 +144,20 @@ export async function listSentryProjects(ownerId: string): Promise<SentryProject
   }
   return projects;
 }
+
+// Submitted slugs and names are never trusted: only ids are matched, and the stored record comes from Sentry.
+export async function canonicalizeSentryProjects(ownerId: string, submitted: SentryProjectRef[]): Promise<SentryProjectRef[]> {
+  if (submitted.length === 0) return [];
+  const accessible = new Map((await listSentryProjects(ownerId)).map((project) => [project.id, project]));
+  return submitted.map(({ id }) => {
+    const project = accessible.get(id);
+    if (!project) {
+      throw new ApiError(
+        400,
+        "A selected Sentry project is not accessible with the connected token. Remove it or reconnect Sentry.",
+        "SENTRY_PROJECT_UNAVAILABLE"
+      );
+    }
+    return project;
+  });
+}

@@ -15,6 +15,11 @@ const state = vi.hoisted(() => ({
     demoAi: false,
     aiReady: true,
     canGenerate: true,
+    sentry: { configured: false, organizationSlug: null, last4: null } as {
+      configured: boolean;
+      organizationSlug: string | null;
+      last4: string | null;
+    },
   },
 }));
 
@@ -39,6 +44,7 @@ vi.mock("@/components/settings-form", () => ({
   GithubCard: ({ login }: { login: string | null }) => <div>github:{login ?? "none"}</div>,
   GitLabCard: ({ username }: { username: string | null }) => <div>gitlab:{username ?? "none"}</div>,
   AiCard: () => <div>ai-card</div>,
+  SentryCard: (props: unknown) => <div>sentry-card:{JSON.stringify(props)}</div>,
 }));
 
 vi.mock("@/components/upgrade-button", () => ({
@@ -60,6 +66,7 @@ beforeEach(() => {
     demoAi: false,
     aiReady: true,
     canGenerate: true,
+    sentry: { configured: false, organizationSlug: null, last4: null },
   };
 });
 
@@ -113,6 +120,23 @@ describe("settings billing card", () => {
     expect(html).not.toContain("Manage billing button");
     expect(html).not.toContain("Upgrade button");
     expect(html).toContain("Managed AI is unavailable on this deployment. Contact your organization admin.");
+  });
+
+  it("shows admins the Sentry card with only the safe connection status", async () => {
+    state.status = { ...state.status, sentry: { configured: true, organizationSlug: "acme", last4: "wxyz" } };
+    const html = await render();
+    expect(html).toContain("sentry-card:");
+    expect(html).toContain("&quot;organizationSlug&quot;:&quot;acme&quot;");
+    expect(html).toContain("&quot;last4&quot;:&quot;wxyz&quot;");
+    expect(html).not.toMatch(/token/i);
+  });
+
+  it("hides the Sentry card from workspace members", async () => {
+    state.admin = false;
+    state.status = { ...state.status, sentry: { configured: true, organizationSlug: "acme", last4: "wxyz" } };
+    const html = await render();
+    expect(html).not.toContain("sentry-card:");
+    expect(html).not.toContain("acme");
   });
 
   it("hides billing UI when billing is disabled", async () => {

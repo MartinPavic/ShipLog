@@ -4,14 +4,16 @@ import { ProjectForm } from "@/components/project-form";
 import { getOwner } from "@/lib/owner";
 import { getPlanLimits } from "@/lib/plans";
 import { listProjects } from "@/lib/projects";
+import { getSentryStatus } from "@/lib/sentry-settings";
 import { listTemplates } from "@/lib/templates";
 
 export default async function NewProjectPage() {
   const owner = await getOwner();
-  const [projects, { limits }, templates] = await Promise.all([
+  const [projects, { limits }, templates, sentry] = await Promise.all([
     listProjects(owner.ownerId),
     getPlanLimits(owner.ownerId),
     listTemplates(owner.ownerId),
+    getSentryStatus(owner.ownerId),
   ]);
   if (projects.length >= limits.maxProjects) redirect("/dashboard/projects");
 
@@ -23,7 +25,7 @@ export default async function NewProjectPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-bold">New project</h1>
       </div>
-      <ProjectForm mode="create" templates={templates} />
+      <ProjectForm mode="create" templates={templates} sentryConnected={sentry.configured} />
     </div>
   );
 }

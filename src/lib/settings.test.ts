@@ -67,11 +67,12 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
 
     const { inArray } = await import("drizzle-orm");
     const { getDb } = await import("@/db");
-    const { aiCredentials, billingAccounts, githubConnections, usageCounters } = await import("@/db/schema");
+    const { aiCredentials, billingAccounts, githubConnections, sentryConnections, usageCounters } = await import("@/db/schema");
     const owners = Object.values(ownerIds);
     const users = Object.values(userIds);
     const db = getDb();
 
+    await db.delete(sentryConnections).where(inArray(sentryConnections.ownerId, owners));
     await db.delete(usageCounters).where(inArray(usageCounters.ownerId, owners));
     await db.delete(aiCredentials).where(inArray(aiCredentials.ownerId, owners));
     await db.delete(billingAccounts).where(inArray(billingAccounts.ownerId, owners));
@@ -135,6 +136,29 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     const noManagedKey = await getSetupStatus({ ownerId: ownerIds.free, userId: userIds.free });
     expect(noManagedKey.aiMode).toBe("byok");
     expect(noManagedKey.usage).toEqual({ used: 2, limit: null });
+  });
+
+  it("reports Sentry status without ever exposing the token", async () => {
+    const { getSetupStatus } = await import("@/lib/settings");
+    const { getDb } = await import("@/db");
+    const { sentryConnections } = await import("@/db/schema");
+    const { encrypt } = await import("./crypto");
+    const savedKey = process.env.ENCRYPTION_KEY;
+    const token = "sntryu_0123456789abcdef0123456789abcdef";
+    process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
+    try {
+      const owner = { ownerId: ownerIds.proByok, userId: userIds.proByok };
+      expect((await getSetupStatus(owner)).sentry).toEqual({ configured: false, organizationSlug: null, last4: null });
+
+      await getDb().insert(sentryConnections).values({ ownerId: owner.ownerId, organizationSlug: "acme", encryptedToken: encrypt(token) });
+      const status = await getSetupStatus(owner);
+      expect(status.sentry).toEqual({ configured: true, organizationSlug: "acme", last4: token.slice(-4) });
+      expect(JSON.stringify(status)).not.toContain(token);
+      expect((await getSetupStatus({ ownerId: ownerIds.ultraByok, userId: userIds.ultraByok })).sentry.configured).toBe(false);
+    } finally {
+      if (savedKey === undefined) delete process.env.ENCRYPTION_KEY;
+      else process.env.ENCRYPTION_KEY = savedKey;
+    }
   });
 
   it("shares billing-off source selection between the dashboard meter, setup status and AI access", async () => {

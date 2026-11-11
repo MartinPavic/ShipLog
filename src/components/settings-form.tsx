@@ -348,3 +348,115 @@ export function AiCard({ ai, canManage }: { ai: AiStatus; canManage: boolean }) 
     </Card>
   );
 }
+
+type SentryStatus =
+  | { configured: true; organizationSlug: string; last4: string }
+  | { configured: false; organizationSlug: null; last4: null };
+
+// Admin-only. The stored token is never sent to the client; only the organization and last four characters are.
+export function SentryCard({ sentry }: { sentry: SentryStatus }) {
+  const [organization, setOrganization] = useState(sentry.organizationSlug ?? "");
+  const [token, setToken] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const { loading, message, run } = useAction();
+  const showForm = !sentry.configured || replacing;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sentry</CardTitle>
+        <CardDescription>
+          Connect a Sentry organization so projects can link their Sentry projects. The token is encrypted at rest and
+          needs project:read access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {sentry.configured && !replacing && (
+          <p className="text-sm">
+            Connected to <strong>{sentry.organizationSlug}</strong> with token ending in {sentry.last4}
+          </p>
+        )}
+        {showForm && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="sentryOrganization">Organization slug</Label>
+              <Input
+                id="sentryOrganization"
+                value={organization}
+                onChange={(event) => setOrganization(event.target.value)}
+                autoComplete="off"
+                placeholder="my-organization"
+                disabled={loading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sentryToken">Auth token</Label>
+              <Input
+                id="sentryToken"
+                type="password"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                autoComplete="off"
+                placeholder="Sentry auth token"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">It is verified with Sentry before it is saved and never shown again.</p>
+            </div>
+          </>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {showForm ? (
+            <>
+              <Button
+                disabled={loading || !organization.trim() || !token.trim()}
+                onClick={() =>
+                  run(async () => {
+                    await apiRequest("/api/settings/sentry", "PUT", { organizationSlug: organization.trim(), token: token.trim() });
+                    setToken("");
+                    setReplacing(false);
+                    return "Sentry connected";
+                  })
+                }
+              >
+                {sentry.configured ? "Replace connection" : "Connect Sentry"}
+              </Button>
+              {replacing && (
+                <Button
+                  variant="ghost"
+                  disabled={loading}
+                  onClick={() => {
+                    setReplacing(false);
+                    setToken("");
+                    setOrganization(sentry.organizationSlug ?? "");
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+            </>
+          ) : (
+            <Button variant="outline" disabled={loading} onClick={() => setReplacing(true)}>
+              Replace
+            </Button>
+          )}
+          {sentry.configured && !replacing && (
+            <Button
+              variant="ghost"
+              disabled={loading}
+              onClick={async () => {
+                if (!window.confirm("Disconnect Sentry? Saved project selections are kept.")) return;
+                await run(async () => {
+                  await apiRequest("/api/settings/sentry", "DELETE");
+                  return "Sentry disconnected. Saved project selections are kept.";
+                });
+              }}
+            >
+              Disconnect
+            </Button>
+          )}
+          <Feedback message={message} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
