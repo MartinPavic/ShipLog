@@ -129,7 +129,8 @@ describe("documentation", () => {
 
     const customization = read("docs/customization.md");
     expect(customization).toContain("src/db/schema.ts");
-    expect(customization).toContain("ChannelKind");
+    expect(customization).toMatch(/ChannelKind[^\n]*src\/lib\/delivery\.ts/);
+    expect(customization).not.toMatch(/ChannelKind[^\n]*src\/db\/schema\.ts/);
     expect(customization).toContain("isAllowedWebhook");
     expect(customization.toLowerCase()).toContain("validation");
     expect(customization.toLowerCase()).toContain("sender");

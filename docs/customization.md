@@ -94,15 +94,19 @@ read its key in `managedAiKey()` in `src/env.ts`.
 
 ## Delivery channels
 
-Delivery channel kinds are defined in [`src/db/schema.ts`](../src/db/schema.ts) as the `ChannelKind` type. The
-`delivery_channels.kind` column is plain text in PostgreSQL, so adding a new kind (for example Microsoft Teams) needs no SQL enum migration.
+The `delivery_channels.kind` column in [`src/db/schema.ts`](../src/db/schema.ts) is plain text: `text("kind", { enum: [...] })`.
+That `enum` array is a TypeScript-only annotation for Drizzle, not a PostgreSQL enum type, so adding a new kind
+(for example Microsoft Teams) needs no SQL enum migration.
+
+The runtime `ChannelKind` union lives in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
 
 To add a new channel kind, update:
 
-1. `ChannelKind` in `src/db/schema.ts`.
-2. `isAllowedWebhook` and channel validation in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
-3. The sender branch in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
-4. The channel form in `src/components/channels-manager.tsx`.
+1. The `enum` annotation in [`src/db/schema.ts`](../src/db/schema.ts) for `delivery_channels.kind`.
+2. `ChannelKind` in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
+3. `isAllowedWebhook` and channel validation in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
+4. The sender branch in [`src/lib/delivery.ts`](../src/lib/delivery.ts).
+5. The channel form in `src/components/channels-manager.tsx`.
 
 ## Database changes
 
