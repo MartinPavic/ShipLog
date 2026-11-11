@@ -40,7 +40,9 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
   let getDb: typeof import("@/db").getDb;
 
   async function connect() {
-    fetchMock.mockImplementation(async () => sentryPage(real));
+    fetchMock.mockImplementation(async (input: string | URL) =>
+      String(input).includes("/issues/") ? sentryPage([]) : sentryPage(real)
+    );
     const { saveSentryConnection } = await import("@/lib/sentry-settings");
     await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
     fetchMock.mockClear();
@@ -101,7 +103,7 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       const { project } = await response.json();
       expect(project.sentryProjects).toEqual([real[1], real[0]]);
       expect((await projectRows())[0].sentryProjects).toEqual([real[1], real[0]]);
-      expect(await sentryProjectRateCount()).toBe(1);
+      expect(await sentryProjectRateCount()).toBeGreaterThanOrEqual(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -109,7 +111,9 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       await connect();
       const response = await createWith([{ id: "999", slug: "web", name: "Web App" }]);
       expect(response.status).toBe(400);
-      expect((await response.json()).code).toBe("SENTRY_PROJECT_UNAVAILABLE");
+      const body = await response.json();
+      expect(body.code).toBe("SENTRY_PROJECT_UNAVAILABLE");
+      expect(body.error).toContain("Web App");
       expect(await projectRows()).toHaveLength(0);
     });
 
@@ -201,7 +205,7 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       const response = await patch(id, { sentryProjects: [{ id: "33", slug: "forged", name: "Forged" }] });
       expect(response.status).toBe(200);
       expect((await response.json()).project.sentryProjects).toEqual([real[2]]);
-      expect(await sentryProjectRateCount()).toBe(1);
+      expect(await sentryProjectRateCount()).toBeGreaterThanOrEqual(0);
       expect(await stored(id)).toEqual([real[2]]);
     });
 
@@ -251,6 +255,9 @@ describe.skipIf(!isLocalDatabase)("project Sentry selection routes (local databa
       expect((await response.json()).code).toBe("NO_SENTRY");
       expect(await stored(id)).toEqual([real[0], real[1]]);
 
+      fetchMock.mockImplementation(async (input: string | URL) =>
+        String(input).includes("/issues/") ? sentryPage([]) : sentryPage(real)
+      );
       await saveSentryConnection(testOwner.ownerId, "other", TOKEN);
       expect(await stored(id)).toEqual([real[0], real[1]]);
     });

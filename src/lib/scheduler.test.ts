@@ -340,7 +340,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
 
     expect(await run(fx)).toMatchObject({ skipped: 1, retry: 0, generated: 0, failed: 0 });
     expect(await runRow(fx)).toMatchObject({ status: "skipped" });
-    expect((await runRow(fx)).error).toContain("more than 1000 projects");
+    expect((await runRow(fx)).error).toContain("above 1,000 projects are not supported yet");
     expect(emails()).toHaveLength(1);
     expect(await usage(fx)).toBe(0);
     expect(await logsOf(fx)).toHaveLength(0);
@@ -357,7 +357,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     };
     expect(await run(fx)).toMatchObject({ skipped: 1, generated: 0, retry: 0, failed: 0 });
     expect(await runRow(fx)).toMatchObject({ status: "skipped" });
-    expect((await runRow(fx)).error).toContain("selected Sentry project is not accessible");
+    expect((await runRow(fx)).error).toContain("Selected Sentry project");
+    expect((await runRow(fx)).error).toContain("is not accessible");
     expect(emails()).toHaveLength(1);
     expect(await usage(fx)).toBe(0);
     expect(await logsOf(fx)).toHaveLength(0);
@@ -612,7 +613,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const [log] = await logsOf(fx);
     const { listDeliveries } = await import("./delivery");
     expect(await listDeliveries(log.id)).toMatchObject([
-      { kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." },
+      { kind: "teams", status: "unknown", error: "Could not confirm delivery to Microsoft Teams." },
     ]);
   });
 

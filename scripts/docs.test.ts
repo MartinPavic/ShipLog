@@ -114,8 +114,10 @@ describe("documentation", () => {
     expect(section.startsWith("## Microsoft Teams delivery")).toBe(true);
     expect(section).toContain("Workflows");
     expect(section).toContain("When a Teams webhook request is received");
+    expect(section).toMatch(/authentication[^\n]*Anyone/i);
     expect(section.toLowerCase()).toContain("co-owner");
     expect(section).toContain("28 KB");
+    expect(section).toContain("24 KB");
     expect(section).toMatch(/Office 365 connector[^.]*retired/i);
     expect(section).toContain("Clerk Organizations");
     expect(section).toContain("`TEAMS_ENABLED`");
@@ -160,10 +162,13 @@ describe("documentation", () => {
     expect(section.toLowerCase()).toContain("organization slug");
     expect(section.toLowerCase()).toContain("admin");
     expect(section.toLowerCase()).toContain("read-only");
+    expect(section.toLowerCase()).toMatch(/personal token|internal integration/);
+    expect(section.toLowerCase()).not.toMatch(/organization auth token/);
     expect(section.toLowerCase()).toMatch(/selected (sentry )?projects?/);
     expect(section.toLowerCase()).toMatch(/report window|reporting window/);
     expect(section.toLowerCase()).toMatch(/lifetime/);
     expect(section.toLowerCase()).toMatch(/lower bound|capped|bounded/);
+    expect(section).toMatch(/1,000 projects|1000 projects/);
     expect(section.toLowerCase()).toMatch(/disconnect[^.]*(keep|preserv|retain)/);
     expect(section.toLowerCase()).toContain("repository");
     expect(section.toLowerCase()).toContain("reconnect");

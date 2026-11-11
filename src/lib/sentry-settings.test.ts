@@ -87,14 +87,24 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       expect(put.status).toBe(200);
       expect(await put.json()).toEqual({ configured: true, organizationSlug: "acme-org", last4: TOKEN.slice(-4) });
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const [url, init] = fetchMock.mock.calls[0];
-      expect(String(url).startsWith(`${API}organizations/acme-org/projects/`)).toBe(true);
-      expect(new URL(String(url)).origin).toBe("https://sentry.io");
-      expect(init.headers.Authorization).toBe(`Bearer ${TOKEN}`);
-      expect(init.redirect).toBe("manual");
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      expect(init.method ?? "GET").toBe("GET");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const [projectsUrl, projectsInit] = fetchMock.mock.calls[0];
+      expect(String(projectsUrl).startsWith(`${API}organizations/acme-org/projects/`)).toBe(true);
+      const [issuesUrl, issuesInit] = fetchMock.mock.calls[1];
+      expect(String(issuesUrl).startsWith(`${API}organizations/acme-org/issues/`)).toBe(true);
+      const issueSearch = new URL(String(issuesUrl)).searchParams;
+      expect(issueSearch.get("query")).toBe("");
+      expect(issueSearch.get("limit")).toBe("1");
+      expect(new URL(String(projectsUrl)).origin).toBe("https://sentry.io");
+      expect(new URL(String(issuesUrl)).origin).toBe("https://sentry.io");
+      expect(projectsInit.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+      expect(issuesInit.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+      expect(projectsInit.redirect).toBe("manual");
+      expect(issuesInit.redirect).toBe("manual");
+      expect(projectsInit.signal).toBeInstanceOf(AbortSignal);
+      expect(issuesInit.signal).toBeInstanceOf(AbortSignal);
+      expect(projectsInit.method ?? "GET").toBe("GET");
+      expect(issuesInit.method ?? "GET").toBe("GET");
 
       const [row] = await rows();
       expect(row.organizationSlug).toBe("acme-org");
@@ -222,6 +232,29 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       expect(decrypt(stored[0].encryptedToken)).toBe(replacement);
     });
 
+    it("rejects save when issue-read verification is forbidden and keeps existing connection data", async () => {
+      const { PUT, GET } = await import("@/app/api/settings/sentry/route");
+
+      fetchMock.mockImplementation(async () => sentryPage([project(1)]));
+      await PUT(putRequest({ organizationSlug: "first", token: TOKEN }));
+
+      fetchMock.mockReset();
+      fetchMock
+        .mockResolvedValueOnce(sentryPage([project(1)]))
+        .mockResolvedValueOnce(new Response("", { status: 403 }));
+
+      const rejected = await PUT(putRequest({ organizationSlug: "second", token: "sntryu_" + "feedbeef".repeat(8) }));
+      expect(rejected.status).toBe(400);
+      const body = await rejected.json();
+      expect(body.code).toBe("SENTRY_FORBIDDEN");
+      expect(body.error).toContain("event:read");
+
+      expect((await GET().then((r) => r.json())).organizationSlug).toBe("first");
+      const stored = await rows();
+      expect(stored).toHaveLength(1);
+      expect(stored[0].organizationSlug).toBe("first");
+    });
+
     it("limits saving and removing the connection to admins while members can read the safe status", async () => {
       fetchMock.mockImplementation(async () => sentryPage([]));
       const { PUT, GET, DELETE } = await import("@/app/api/settings/sentry/route");
@@ -270,7 +303,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
     it("lists safe project summaries across pages using only fixed URLs and validated cursors", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
-      fetchMock.mockResolvedValueOnce(sentryPage([project(1)]));
+      fetchMock.mockResolvedValueOnce(sentryPage([project(1)])).mockResolvedValueOnce(sentryPage([]));
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();
 
@@ -297,7 +330,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
     it("keeps valid siblings when a page includes malformed rows and bounds overlong display names", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
-      fetchMock.mockResolvedValueOnce(sentryPage([project(1)]));
+      fetchMock.mockResolvedValueOnce(sentryPage([project(1)])).mockResolvedValueOnce(sentryPage([]));
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();
 
@@ -321,7 +354,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
     it("fails clearly when page budget is exhausted and rejects unsafe cursors", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
-      fetchMock.mockResolvedValueOnce(sentryPage([]));
+      fetchMock.mockResolvedValueOnce(sentryPage([])).mockResolvedValueOnce(sentryPage([]));
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();
 
@@ -338,7 +371,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
     it("requires a connection to list projects and never calls Sentry for another workspace", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
-      fetchMock.mockResolvedValueOnce(sentryPage([]));
+      fetchMock.mockResolvedValueOnce(sentryPage([])).mockResolvedValueOnce(sentryPage([]));
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();
       await expect(listSentryProjects(otherOwnerId)).rejects.toMatchObject({ status: 400, code: "NO_SENTRY" });
@@ -369,7 +402,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
   describe("project list route", () => {
     it("lets any workspace member read safe project summaries", async () => {
-      fetchMock.mockResolvedValueOnce(sentryPage([]));
+      fetchMock.mockResolvedValueOnce(sentryPage([])).mockResolvedValueOnce(sentryPage([]));
       const { saveSentryConnection } = await import("@/lib/sentry-settings");
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();
@@ -393,7 +426,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
     });
 
     it("maps upstream failures to safe errors", async () => {
-      fetchMock.mockResolvedValueOnce(sentryPage([]));
+      fetchMock.mockResolvedValueOnce(sentryPage([])).mockResolvedValueOnce(sentryPage([]));
       const { saveSentryConnection } = await import("@/lib/sentry-settings");
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
       fetchMock.mockReset();

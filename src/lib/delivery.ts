@@ -19,7 +19,7 @@ const SLACK_LIMIT = 30_000;
 const DISCORD_EMBED_LIMIT = 4_000;
 // Teams rejects messages over ~28 KB (28,672 bytes); stay well under it for the whole JSON body.
 const TEAMS_LIMIT_BYTES = 24_000;
-const LABELS: Record<ChannelKind, string> = { slack: "Slack", discord: "Discord", teams: "Teams", email: "Email" };
+const LABELS: Record<ChannelKind, string> = { slack: "Slack", discord: "Discord", teams: "Microsoft Teams", email: "Email" };
 
 export class DeliveryError extends Error {
   constructor(message: string, readonly unknown = false) {
@@ -27,15 +27,20 @@ export class DeliveryError extends Error {
   }
 }
 
-function webhookStatusMessage(label: string, status: number): string {
+function webhookStatusMessage(kind: ChannelKind, label: string, status: number): string {
   if (status === 404 || status === 410) return `${label} no longer knows this webhook. Remove it and add a new one.`;
-  if (status === 401 || status === 403) return `${label} refused the webhook. Check that it is still active.`;
+  if (status === 401 || status === 403) {
+    if (kind === "teams") {
+      return `${label} refused the webhook. Set the workflow trigger authentication to Anyone and make sure the webhook URL is still current.`;
+    }
+    return `${label} refused the webhook. Check that it is still active.`;
+  }
   if (status === 429) return `${label} is rate limiting this webhook. Try again in a minute.`;
   if (status >= 500) return `${label} is having problems. Try again shortly.`;
   return `${label} rejected the message (HTTP ${status}).`;
 }
 
-async function postJson(url: string, payload: unknown, label: string): Promise<void> {
+async function postJson(kind: ChannelKind, url: string, payload: unknown, label: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(url, {
@@ -49,7 +54,7 @@ async function postJson(url: string, payload: unknown, label: string): Promise<v
   } catch {
     throw new DeliveryError(`Could not confirm delivery to ${label}.`, true);
   }
-  if (!res.ok) throw new DeliveryError(webhookStatusMessage(label, res.status));
+  if (!res.ok) throw new DeliveryError(webhookStatusMessage(kind, label, res.status));
 }
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
@@ -109,11 +114,12 @@ export async function sendMessage(kind: ChannelKind, config: ChannelConfig, mess
   if (!isAllowedWebhook(kind, webhookUrl)) throw new DeliveryError("This webhook URL is not allowed.");
 
   if (kind === "slack") {
-    await postJson(webhookUrl, { text: truncate(`*${message.title}*\n\n${toSlackMrkdwn(message.markdown)}`, SLACK_LIMIT) }, "Slack");
+    await postJson(kind, webhookUrl, { text: truncate(`*${message.title}*\n\n${toSlackMrkdwn(message.markdown)}`, SLACK_LIMIT) }, "Slack");
   } else if (kind === "teams") {
-    await postJson(webhookUrl, teamsPayload(message.title, message.markdown), "Teams");
+    await postJson(kind, webhookUrl, teamsPayload(message.title, message.markdown), "Microsoft Teams");
   } else {
     await postJson(
+      kind,
       webhookUrl,
       { embeds: [{ title: truncate(message.title, 256), description: truncate(message.markdown, DISCORD_EMBED_LIMIT) }] },
       "Discord"

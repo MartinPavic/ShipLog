@@ -204,8 +204,9 @@ export function ChannelsManager({
                   onChange={(e) => setWebhookUrl(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Stored encrypted. Only the last four characters are shown afterwards. For Microsoft Teams, paste the
-                  Workflows webhook URL from your channel workflow trigger.
+                  Stored encrypted. Slack/Discord hints include only the host and last four characters; Microsoft Teams
+                  hints show host only. For Microsoft Teams, paste the Workflows webhook URL from your channel workflow
+                  trigger.
                 </p>
               </div>
             )}

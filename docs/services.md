@@ -99,10 +99,15 @@ into the project's Delivery tab. The URL can carry a secret query string, so it 
 
 1. In Microsoft Teams, open the target channel and create a **Workflows** flow from a template that posts to the
    channel When a Teams webhook request is received.
-2. Copy the generated HTTPS webhook URL (`logic.azure.com` host) and add it as a `Microsoft Teams` channel in ShipLog.
-3. Add at least one co-owner to the workflow. Workflows can stop when the original owner leaves the workspace; a
-   co-owner keeps delivery operational.
-4. Keep payload size in mind: Teams webhook-triggered workflow requests are limited to about 28 KB per message.
+2. In the trigger step, set authentication to **Anyone**. ShipLog does not send bearer OAuth tokens to Workflows,
+   so tenant-only or specific-user trigger auth will reject requests.
+3. Keep the trigger and action separate: the incoming trigger receives ShipLog's payload, and a later action posts the
+   message to the selected Teams channel.
+4. Copy the generated HTTPS webhook URL (`logic.azure.com` host) and add it as a `Microsoft Teams` channel in ShipLog.
+5. Workflow ownership is tied to the Microsoft tenant user who created it. Add at least one co-owner so delivery keeps
+   working if the original owner leaves the tenant or loses access.
+6. Keep payload size in mind: Teams webhook-triggered workflow requests are limited to about 28 KB per message, and
+   ShipLog caps its payload to 24 KB before sending.
 
 Legacy Office 365 connector webhooks are retired and are not supported by ShipLog. Use Workflows webhooks only.
 
@@ -117,12 +122,13 @@ repository sources: a log is still built from the project's GitHub or GitLab act
 the project has selected Sentry projects. Only sentry.io is supported. Self-hosted Sentry, OAuth, and Sentry alert
 delivery are not supported.
 
-1. In Sentry, create an organization auth token (or an internal integration token) with the read-only scopes
-   `project:read` and `event:read` and nothing else.
+1. In Sentry, create a personal token with the read-only scopes `project:read` and `event:read`, or use an internal
+   integration with equivalent read permissions. Use the narrowest token that can read projects and issue events.
 2. A workspace admin opens Settings, enters the Sentry organization slug and the token, and saves. ShipLog verifies both
-   against Sentry before storing anything. The token is encrypted with `ENCRYPTION_KEY`, shared by the whole
-   workspace, and only its last four characters are ever shown. Members can see the connection status; only admins can
-   change or remove it.
+   against Sentry before storing anything: first project listing (`project:read`), then a bounded issue-list check
+   (`query=""`, `limit=1`) that verifies issue/event visibility (`event:read`). The token is encrypted with
+   `ENCRYPTION_KEY`, shared by the whole workspace, and only its last four characters are ever shown. The Settings
+   card is admin-only.
 3. In a project's settings, pick the Sentry projects to include (up to 20). Projects without a selection never call
    Sentry, for manual and scheduled runs alike.
 
@@ -139,6 +145,9 @@ Until then, runs for projects with selections fail with a prompt to connect Sent
 project creator is notified. If a selected project was removed, access was revoked, or the stored token can no longer be
 read (for example after changing `ENCRYPTION_KEY`), reconnect Sentry and then remove or reselect unavailable projects in
 project settings. Sentry adds no environment variable.
+
+Organizations above 1,000 projects are not supported yet: ShipLog reads up to 10 pages of 100 projects while browsing
+accessible Sentry projects.
 
 ## Resend (optional)
 

@@ -33,10 +33,14 @@ The subscription is locked to Managed AI, but `MANAGED_AI_ENABLED=false` or `OPE
 AI configuration or change the subscription to BYOK through billing management. A saved workspace key is not a fallback.
 
 **Sentry says the token was rejected or the stored token could not be read.**
-Create a read-only token with `project:read` and `event:read`, check the organization slug, and reconnect Sentry in
-Settings. This is also needed after changing `ENCRYPTION_KEY`. A "redirected the request" error means the organization
-slug or token does not point at sentry.io; fix it and reconnect. Scheduled runs hitting these errors are skipped and the
-project creator is notified.
+Create a personal token with `project:read` and `event:read` (or use an internal integration with equivalent read
+permissions), check the organization slug, and reconnect Sentry in Settings. This is also needed after changing
+`ENCRYPTION_KEY`. A "redirected the request" error means the organization slug or token does not point at sentry.io;
+fix it and reconnect. Scheduled runs hitting these errors are skipped and the project creator is notified.
+
+**Microsoft Teams says the webhook was refused (401/403).**
+Edit the workflow trigger and set authentication to **Anyone**, then confirm the webhook URL in ShipLog still matches
+the current workflow URL.
 
 **A run fails with `SENTRY_PROJECT_UNAVAILABLE`.**
 ShipLog rechecks selected Sentry project IDs at generation time before fetching issues. One or more selected projects

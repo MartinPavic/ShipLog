@@ -53,6 +53,25 @@ async function fetchProjectPage(organizationSlug: string, token: string, cursor?
   return { projects, nextCursor: next };
 }
 
+async function verifyIssueReadAccess(organizationSlug: string, token: string, signal?: AbortSignal) {
+  const { body } = await fetchSentryOrganizationPage(
+    { organizationSlug, token },
+    "issues/",
+    [
+      ["query", ""],
+      ["limit", "1"],
+    ],
+    {
+      scopes: ["event:read"],
+      errors: { notFound: "Sentry could not find that organization. Check the organization slug." },
+      signal,
+    }
+  );
+
+  const parsed = z.array(z.unknown()).max(1).safeParse(body);
+  if (!parsed.success) throw invalidResponse();
+}
+
 export async function getSentryConnection(ownerId: string) {
   const [row] = await getDb().select().from(sentryConnections).where(eq(sentryConnections.ownerId, ownerId)).limit(1);
   if (!row) return null;
@@ -95,6 +114,7 @@ export async function getSentryStatus(ownerId: string) {
 export async function saveSentryConnection(ownerId: string, organizationSlug: string, token: string) {
   const input = sentrySettingsSchema.parse({ organizationSlug, token });
   await fetchProjectPage(input.organizationSlug, input.token);
+  await verifyIssueReadAccess(input.organizationSlug, input.token);
   const values = { organizationSlug: input.organizationSlug, encryptedToken: encrypt(input.token), updatedAt: new Date() };
   await getDb()
     .insert(sentryConnections)
@@ -129,7 +149,7 @@ export async function listSentryProjects(ownerId: string, options: ListSentryPro
   if (cursor) {
     throw new ApiError(
       502,
-      "Sentry returned more than 1000 projects. Narrow the organization project set or contact support.",
+      "Sentry organizations above 1,000 projects are not supported yet. Narrow the organization project set or contact support.",
       "SENTRY_PAGE_LIMIT"
     );
   }
@@ -144,12 +164,13 @@ export async function canonicalizeSentryProjects(
 ): Promise<SentryProjectRef[]> {
   if (submitted.length === 0) return [];
   const accessible = new Map((await listSentryProjects(ownerId, options)).map((project) => [project.id, project]));
-  return submitted.map(({ id }) => {
+  return submitted.map(({ id, name }) => {
     const project = accessible.get(id);
     if (!project) {
+      const displayName = JSON.stringify(name.slice(0, MAX_PROJECT_NAME_LENGTH) || "(unknown project)");
       throw new ApiError(
         400,
-        "A selected Sentry project is not accessible with the connected token. Remove it or reconnect Sentry.",
+        `Selected Sentry project ${displayName} is not accessible with the connected token. Remove it or reconnect Sentry.`,
         "SENTRY_PROJECT_UNAVAILABLE"
       );
     }

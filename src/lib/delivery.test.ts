@@ -577,7 +577,8 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
         const log = await insertLog();
         const expectations: [number, string][] = [
           [404, "no longer knows this webhook"],
-          [403, "refused the webhook"],
+          [401, "Set the workflow trigger authentication to Anyone"],
+          [403, "Set the workflow trigger authentication to Anyone"],
           [429, "rate limiting"],
           [502, "having problems"],
           [400, "rejected the message (HTTP 400)"],
@@ -605,11 +606,13 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
           throw new Error("connection reset after request");
         };
         const unknown = await (await deliver(log.id, { channelIds: [channelId] })).json();
-        expect(unknown.results).toMatchObject([{ kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." }]);
+        expect(unknown.results).toMatchObject([
+          { kind: "teams", status: "unknown", error: "Could not confirm delivery to Microsoft Teams." },
+        ]);
 
         const { listDeliveries } = await import("./delivery");
         expect(await listDeliveries(log.id)).toMatchObject([
-          { kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." },
+          { kind: "teams", status: "unknown", error: "Could not confirm delivery to Microsoft Teams." },
           { kind: "teams", status: "failed" },
         ]);
       });
@@ -626,7 +629,11 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
             throw failure;
           };
           const { results } = await (await deliver(log.id, { channelIds: [channelId] })).json();
-          expect(results[0]).toMatchObject({ kind: "teams", status: "unknown", error: "Could not confirm delivery to Teams." });
+          expect(results[0]).toMatchObject({
+            kind: "teams",
+            status: "unknown",
+            error: "Could not confirm delivery to Microsoft Teams.",
+          });
         }
         const init = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
         expect(init.redirect).toBe("error");

@@ -11,11 +11,14 @@ follow [Semantic Versioning](https://semver.org).
   `event:read`), projects select Sentry projects, and generated logs include issues with event counts inside the report
   window as supplemental context to repository activity. Requires `npm run db:migrate` (`sentry_connections` table and
   `projects.sentry_projects`); no new environment variable. Selected Sentry project IDs are revalidated at generation
-  time, with inaccessible selections failing as `SENTRY_PROJECT_UNAVAILABLE`. Unreadable stored tokens ask for a
-  reconnect, and scheduled runs that hit a Sentry redirect or inaccessible project are skipped and notify the creator.
+  time, with inaccessible selections failing as `SENTRY_PROJECT_UNAVAILABLE` and naming the missing project. Connection
+  save now verifies both scopes before storing: project listing plus a bounded issue-read check (`query=""`, `limit=1`).
+  Unreadable stored tokens ask for a reconnect, and scheduled runs that hit a Sentry redirect or inaccessible project
+  are skipped and notify the creator.
 - Microsoft Teams delivery channel via channel-specific Workflows webhook URLs, a paid delivery channel under the
-  existing delivery limits. Legacy Office 365 connectors are retired and not supported. No SQL migration or new
-  environment variable.
+  existing delivery limits. Legacy Office 365 connectors are retired and not supported. Workflows trigger
+  authentication must be set to **Anyone** (ShipLog does not send bearer OAuth), and ShipLog caps payloads to 24 KB
+  before posting. No SQL migration or new environment variable.
 - GitLab.com and public HTTPS self-managed GitLab support, including per-workspace OAuth configuration, personal member
   connections, mixed GitHub/GitLab projects and normalized activity generation. Requires `npm run db:migrate`; existing
   untagged project repositories remain GitHub.
