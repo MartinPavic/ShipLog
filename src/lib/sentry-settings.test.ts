@@ -254,7 +254,7 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.get("cursor")).toBe("0:100:0");
     });
 
-    it("stops following pages at a fixed cap and rejects unsafe cursors", async () => {
+    it("fails clearly when page budget is exhausted and rejects unsafe cursors", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
       fetchMock.mockResolvedValueOnce(sentryPage([]));
       await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
@@ -262,9 +262,8 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
 
       let n = 0;
       fetchMock.mockImplementation(async () => sentryPage([project(++n)], `0:${n * 100}:0`));
-      const listed = await listSentryProjects(testOwner.ownerId);
-      expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(10);
-      expect(listed).toHaveLength(fetchMock.mock.calls.length);
+      await expect(listSentryProjects(testOwner.ownerId)).rejects.toMatchObject({ status: 502, code: "SENTRY_PAGE_LIMIT" });
+      expect(fetchMock).toHaveBeenCalledTimes(10);
 
       fetchMock.mockReset();
       fetchMock.mockImplementation(async () => sentryPage([project(1)], "../../evil?x=1"));

@@ -107,8 +107,18 @@ export async function listSentryProjects(ownerId: string): Promise<SentryProject
   for (let page = 0; page < MAX_PAGES; page++) {
     const result = await fetchProjectPage(connection.organizationSlug, connection.token, cursor);
     projects.push(...result.projects);
-    if (!result.nextCursor) break;
+    if (!result.nextCursor) {
+      cursor = undefined;
+      break;
+    }
     cursor = result.nextCursor;
+  }
+  if (cursor) {
+    throw new ApiError(
+      502,
+      "Sentry returned more than 1000 projects. Narrow the organization project set or contact support.",
+      "SENTRY_PAGE_LIMIT"
+    );
   }
   return projects;
 }
