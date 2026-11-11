@@ -11,8 +11,15 @@ const SENTRY_API = "https://sentry.io/api/0/";
 const PER_PAGE = 100;
 const MAX_PAGES = 10;
 const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_PROJECT_NAME_LENGTH = 200;
 
-const projectPageSchema = z.array(sentryProjectSchema).max(PER_PAGE);
+const projectPageSchema = z.array(z.unknown()).max(PER_PAGE);
+
+const upstreamProjectRowSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  name: z.string(),
+});
 
 function sentryError(status: number): ApiError {
   if (status === 401) return new ApiError(400, "Sentry rejected the token. Check that it is valid and has project:read access.", "SENTRY_AUTH");
@@ -66,7 +73,22 @@ async function fetchProjectPage(organizationSlug: string, token: string, cursor?
   }
   const parsed = projectPageSchema.safeParse(body);
   if (!parsed.success) throw invalidResponse();
-  return { projects: parsed.data as SentryProjectRef[], nextCursor: nextCursor(response.headers.get("link")) };
+
+  const projects: SentryProjectRef[] = [];
+  for (const row of parsed.data) {
+    const upstream = upstreamProjectRowSchema.safeParse(row);
+    if (!upstream.success) continue;
+
+    const normalized = sentryProjectSchema.safeParse({
+      id: upstream.data.id,
+      slug: upstream.data.slug,
+      name: upstream.data.name.slice(0, MAX_PROJECT_NAME_LENGTH),
+    });
+    if (!normalized.success) continue;
+    projects.push(normalized.data);
+  }
+
+  return { projects, nextCursor: nextCursor(response.headers.get("link")) };
 }
 
 export async function getSentryConnection(ownerId: string) {

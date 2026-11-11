@@ -163,7 +163,14 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
         [() => fetchMock.mockRejectedValue(new Error(`connect failed for ${TOKEN}`)), 502, "SENTRY_UNAVAILABLE"],
         [() => fetchMock.mockResolvedValue(new Response("not json", { status: 200 })), 502, "SENTRY_INVALID_RESPONSE"],
         [() => fetchMock.mockResolvedValue(new Response(JSON.stringify({ projects: [] }), { status: 200 })), 502, "SENTRY_INVALID_RESPONSE"],
-        [() => fetchMock.mockResolvedValue(new Response(JSON.stringify([{ id: 1, slug: "x" }]), { status: 200 })), 502, "SENTRY_INVALID_RESPONSE"],
+        [
+          () =>
+            fetchMock.mockResolvedValue(
+              new Response(JSON.stringify(Array.from({ length: 101 }, (_, i) => project(i + 1))), { status: 200 })
+            ),
+          502,
+          "SENTRY_INVALID_RESPONSE",
+        ],
       ];
       for (const [arrange, status, code] of attempts) {
         arrange();
@@ -255,6 +262,30 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       }
       expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("cursor")).toBeNull();
       expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.get("cursor")).toBe("0:100:0");
+    });
+
+    it("keeps valid siblings when a page includes malformed rows and bounds overlong display names", async () => {
+      const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
+      fetchMock.mockResolvedValueOnce(sentryPage([project(1)]));
+      await saveSentryConnection(testOwner.ownerId, "acme", TOKEN);
+      fetchMock.mockReset();
+
+      const longName = "N".repeat(250);
+      fetchMock.mockResolvedValueOnce(
+        sentryPage([
+          { id: "1", slug: "_internal", name: "Internal" },
+          { id: "2", slug: "-ops", name: longName },
+          { id: "oops", slug: "bad slug!", name: "bad" },
+          { id: "3", slug: "api", name: "API" },
+        ])
+      );
+
+      expect(await listSentryProjects(testOwner.ownerId)).toEqual([
+        { id: "1", slug: "_internal", name: "Internal" },
+        { id: "2", slug: "-ops", name: "N".repeat(200) },
+        { id: "3", slug: "api", name: "API" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("fails clearly when page budget is exhausted and rejects unsafe cursors", async () => {
