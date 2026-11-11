@@ -72,7 +72,7 @@ without an explicit provider continue to use GitHub; GitLab projects may use nes
 | `custom_templates` | Owner-defined writing instructions, tone and audience. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
 | `ship_log_versions` | Earlier content of a log, written on every edit and regeneration. |
-| `delivery_channels`, `deliveries` | Slack, Discord and email channels (encrypted config) and the send history. |
+| `delivery_channels`, `deliveries` | Slack, Discord, Microsoft Teams and email channels (encrypted config) and the send history. |
 | `owner_profiles` | The slug used in public changelog URLs. |
 | `rate_limits` | Fixed-window counters for the abuse limits. |
 | `scheduled_runs` | One row per project and schedule slot, so a slot never runs twice. |

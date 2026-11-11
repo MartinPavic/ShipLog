@@ -89,6 +89,23 @@ The landing page prices are VAT-inclusive display values. Keep them aligned with
 
 Variables: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, `STRIPE_PRICE_ULTRA_MANAGED_ID`.
 
+## Microsoft Teams delivery
+
+ShipLog sends Microsoft Teams notifications through channel-scoped Workflows webhook URLs. Configure one workflow per
+channel and paste that trigger URL into the project's Delivery tab.
+
+1. In Microsoft Teams, open the target channel and create a **Workflows** flow from a template that posts to the
+   channel When a Teams webhook request is received.
+2. Copy the generated HTTPS webhook URL (`logic.azure.com` host) and add it as a `Microsoft Teams` channel in ShipLog.
+3. Add at least one co-owner to the workflow. Workflows can stop when the original owner leaves the workspace; a
+   co-owner keeps delivery operational.
+4. Keep payload size in mind: Teams webhook-triggered workflow requests are limited to about 28 KB per message.
+
+Legacy Office 365 connector webhooks are retired and are not supported by ShipLog. Use Workflows webhooks only.
+
+This delivery integration is separate from Clerk Organizations. `TEAMS_ENABLED` controls ShipLog organization
+workspaces, while `DELIVERY_ENABLED` controls whether Slack/Discord/Microsoft Teams/email delivery is available.
+
 ## Resend (optional)
 
 Used for the email delivery channel and for failure notices about scheduled logs. Verify a sending domain, then set

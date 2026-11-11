@@ -107,4 +107,29 @@ describe("documentation", () => {
   it("keeps the changelog's first release section", () => {
     expect(read("CHANGELOG.md")).toMatch(/^## \[Unreleased\]/m);
   });
+
+  it("documents Microsoft Teams delivery via Workflows, separate from Clerk Organizations", () => {
+    const services = read("docs/services.md");
+    const section = services.slice(services.indexOf("## Microsoft Teams delivery")).split(/\n## /)[0];
+    expect(section.startsWith("## Microsoft Teams delivery")).toBe(true);
+    expect(section).toContain("Workflows");
+    expect(section).toContain("When a Teams webhook request is received");
+    expect(section.toLowerCase()).toContain("co-owner");
+    expect(section).toContain("28 KB");
+    expect(section).toMatch(/Office 365 connector[^.]*retired/i);
+    expect(section).toContain("Clerk Organizations");
+    expect(section).toContain("`TEAMS_ENABLED`");
+    expect(section).toContain("`DELIVERY_ENABLED`");
+    expect(section).not.toMatch(/outlook\.office\.com\/webhook|webhook\.office\.com/);
+
+    for (const file of ["README.md", "docs/configuration.md", "docs/architecture.md", "docs/upgrading.md"]) {
+      expect(read(file), file).toContain("Microsoft Teams");
+    }
+    expect(read("docs/configuration.md")).toContain("not Microsoft Teams");
+
+    const customization = read("docs/customization.md");
+    expect(customization).toContain("delivery_channels.kind");
+    expect(customization.toLowerCase()).toContain("plain text");
+    expect(customization.toLowerCase()).toContain("no sql enum migration");
+  });
 });

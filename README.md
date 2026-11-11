@@ -3,7 +3,7 @@
 Turn GitHub or GitLab activity into clean progress reports. ShipLog reads the commits, merged pull requests, closed issues and
 releases of your repositories and uses an AI model to write a ship log: a weekly update, changelog, standup, client
 report, release notes or investor update. Logs can be edited, shared, published, exported and delivered to Slack,
-Discord or email, manually or on a schedule.
+Discord, Microsoft Teams or email, manually or on a schedule.
 
 ## Features
 
@@ -14,8 +14,8 @@ Discord or email, manually or on a schedule.
 - **History** per project: search, date range, pinned logs, edit with version history, regenerate in place.
 - **Sharing**: read-only links (optionally password protected, hidden from search engines) and a public changelog.
 - **Exports**: Markdown, HTML, Slack mrkdwn, `.md` download, and PDF through the browser's print dialog (paid plans).
-- **Delivery and scheduling** (paid plans): Slack, Discord and email channels; a weekly schedule per project.
-- **Teams** (paid plans): Clerk Organizations with admin and member roles. Billing is flat per organization.
+- **Delivery and scheduling** (paid plans): Slack, Discord, Microsoft Teams and email channels; a weekly schedule per project.
+- **Teams** (paid plans): Clerk Organizations with admin and member roles. This is workspace membership, not Microsoft Teams delivery. Billing is flat per organization.
 - **Billing**: Stripe subscriptions with a customer portal. Switch it off entirely with `BILLING_ENABLED=false`.
 
 | | Free | Pro (BYOK / Managed) | Ultra (BYOK / Managed) |

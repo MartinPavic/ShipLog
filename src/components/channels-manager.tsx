@@ -96,7 +96,7 @@ export function ChannelsManager({
         <Card>
           <CardContent className="space-y-3 pt-6">
             <p className="text-sm text-muted-foreground">
-              Delivery to Slack, Discord and email is a Pro feature.
+              Delivery to Slack, Discord, Microsoft Teams and email is a Pro feature.
             </p>
             <UpgradeButton />
           </CardContent>
@@ -168,6 +168,7 @@ export function ChannelsManager({
                 <SelectContent>
                   <SelectItem value="slack">Slack</SelectItem>
                   <SelectItem value="discord">Discord</SelectItem>
+                  <SelectItem value="teams">Microsoft Teams</SelectItem>
                   <SelectItem value="email" disabled={!emailConfigured}>
                     Email{emailConfigured ? "" : " (not configured)"}
                   </SelectItem>
@@ -193,13 +194,18 @@ export function ChannelsManager({
                   type="password"
                   autoComplete="off"
                   placeholder={
-                    kind === "slack" ? "https://hooks.slack.com/services/…" : "https://discord.com/api/webhooks/…"
+                    kind === "slack"
+                      ? "https://hooks.slack.com/services/…"
+                      : kind === "discord"
+                        ? "https://discord.com/api/webhooks/…"
+                        : "https://….logic.azure.com:443/…"
                   }
                   value={webhookUrl}
                   onChange={(e) => setWebhookUrl(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Stored encrypted. Only the last four characters are shown afterwards.
+                  Stored encrypted. Only the last four characters are shown afterwards. For Microsoft Teams, paste the
+                  Workflows webhook URL from your channel workflow trigger.
                 </p>
               </div>
             )}

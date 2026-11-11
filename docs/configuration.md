@@ -36,9 +36,9 @@ plan lacks. They are read at runtime, so changing one needs a restart, not a reb
 | --- | --- |
 | `BILLING_ENABLED` | No paywall: every workspace gets paid features without plan caps. Stripe routes return 404, billing UI and the pricing section are hidden, and no Stripe variables are required. |
 | `MANAGED_AI_ENABLED` | The server's `OPENAI_API_KEY` is never used. Free/BYOK subscriptions still use workspace keys; Managed AI subscriptions cannot generate until managed AI is restored or the subscription changes to BYOK. Billing-off workspaces need their own key. |
-| `TEAMS_ENABLED` | Everyone works in a personal workspace and the organization switcher is hidden. |
+| `TEAMS_ENABLED` | Everyone works in a personal workspace and the organization switcher is hidden. This controls Clerk Organizations, not Microsoft Teams delivery. |
 | `SCHEDULING_ENABLED` | No scheduled logs. The cron endpoint reports that it skipped, and `CRON_SECRET` is not required. |
-| `DELIVERY_ENABLED` | Slack, Discord and email channels and "send now" are unavailable. |
+| `DELIVERY_ENABLED` | Slack, Discord, Microsoft Teams and email channels and "send now" are unavailable. |
 
 ## Demo mode
 

@@ -95,8 +95,9 @@ read its key in `managedAiKey()` in `src/env.ts`.
 ## Delivery channels
 
 Slack, Discord and email senders are in [`src/lib/delivery.ts`](../src/lib/delivery.ts). A new kind needs an entry in
-the channel `kind` enum in `src/db/schema.ts` (and a migration if you generate one), a validation schema, a sender, and a
-form in `src/components/channels-manager.tsx`.
+the delivery handlers, a validation schema, and a form in `src/components/channels-manager.tsx`.
+
+`delivery_channels.kind` is plain text, so adding a new delivery kind (for example Microsoft Teams) needs no SQL enum migration. Update the UI labels and sender logic instead.
 
 ## Database changes
 

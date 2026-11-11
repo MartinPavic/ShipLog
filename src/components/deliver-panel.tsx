@@ -13,7 +13,12 @@ type Channel = { id: string; kind: string; hint: string };
 type HistoryItem = { id: string; kind: string; status: string; error: string | null; sentAt: string };
 type Result = { channelId: string; kind: string; status: "sent" | "failed" | "unknown"; error: string | null };
 
-const LABEL: Record<string, string> = { slack: "Slack", discord: "Discord", email: "Email" };
+const LABEL: Record<string, string> = {
+  slack: "Slack",
+  discord: "Discord",
+  teams: "Microsoft Teams",
+  email: "Email",
+};
 
 export function DeliverPanel({
   logId,
@@ -59,7 +64,9 @@ export function DeliverPanel({
       <CardContent className="space-y-4">
         {!allowed ? (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Delivery to Slack, Discord and email is a Pro feature.</p>
+            <p className="text-sm text-muted-foreground">
+              Delivery to Slack, Discord, Microsoft Teams and email is a Pro feature.
+            </p>
             <UpgradeButton />
           </div>
         ) : channels.length === 0 ? (

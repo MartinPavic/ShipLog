@@ -29,6 +29,10 @@ The three-tier billing update requires setting four Stripe price IDs when billin
 `STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, and
 `STRIPE_PRICE_ULTRA_MANAGED_ID`. Legacy single-price mappings no longer grant paid entitlements.
 
+Microsoft Teams delivery uses Workflows webhook URLs and the existing `delivery_channels.kind` text column, so there is
+no SQL enum migration requirement. Keep `TEAMS_ENABLED` (Clerk Organizations) separate from `DELIVERY_ENABLED`
+(Slack/Discord/Microsoft Teams/email delivery availability) when validating an upgrade.
+
 ## Tips
 
 - Keep your changes small and in the files above, and put new behavior in new files. That makes the next upgrade a
