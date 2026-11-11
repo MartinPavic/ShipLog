@@ -255,6 +255,19 @@ describe.skipIf(!isLocalDatabase)("Sentry connection (local database)", () => {
       expect(await getSentryConnection(otherOwnerId)).toBeNull();
     });
 
+    it("maps an unreadable stored token to a safe reconnect error", async () => {
+      await getDb().insert(schema.sentryConnections).values({ ownerId: testOwner.ownerId, organizationSlug: "acme", encryptedToken: "not-decryptable-ciphertext" });
+      const { getSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
+      for (const call of [() => getSentryConnection(testOwner.ownerId), () => listSentryProjects(testOwner.ownerId)]) {
+        const error = await call().catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ApiError);
+        expect(error).toMatchObject({ status: 400, code: "SENTRY_AUTH" });
+        expect((error as ApiError).message).toMatch(/reconnect Sentry/i);
+        expect((error as ApiError).message).not.toContain("not-decryptable-ciphertext");
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("lists safe project summaries across pages using only fixed URLs and validated cursors", async () => {
       const { saveSentryConnection, listSentryProjects } = await import("@/lib/sentry-settings");
       fetchMock.mockResolvedValueOnce(sentryPage([project(1)]));

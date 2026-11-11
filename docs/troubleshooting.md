@@ -32,6 +32,12 @@ or set `AI_PROVIDER=mock` for placeholder output.
 The subscription is locked to Managed AI, but `MANAGED_AI_ENABLED=false` or `OPENAI_API_KEY` is missing. Restore managed
 AI configuration or change the subscription to BYOK through billing management. A saved workspace key is not a fallback.
 
+**Sentry says the token was rejected or the stored token could not be read.**
+Create a read-only token with `project:read` and `event:read`, check the organization slug, and reconnect Sentry in
+Settings. This is also needed after changing `ENCRYPTION_KEY`. A "redirected the request" error means the organization
+slug or token does not point at sentry.io; fix it and reconnect. Scheduled runs hitting these errors are skipped and the
+project creator is notified.
+
 **A Free workspace can't create a second project.**
 That is the plan limit. The demo project from `npm run seed` counts too: remove it with `npm run seed -- --remove`.
 

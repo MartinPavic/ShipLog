@@ -139,4 +139,46 @@ describe("documentation", () => {
     expect(customization.toLowerCase()).toContain("plain text");
     expect(customization.toLowerCase()).toContain("no sql enum migration");
   });
+
+  it("documents Teams as a paid delivery channel with no SQL migration or new variable", () => {
+    const services = read("docs/services.md");
+    const section = services.slice(services.indexOf("## Microsoft Teams delivery")).split(/\n## /)[0];
+    expect(section).toMatch(/paid/i);
+    expect(section).toMatch(/delivery limits/i);
+    expect(section).toMatch(/channel-(specific|scoped)/i);
+    expect(section).toMatch(/encrypted/i);
+    expect(read("docs/upgrading.md")).toMatch(/no SQL (enum )?migration/i);
+    expect(read("CHANGELOG.md")).toMatch(/Microsoft Teams/);
+  });
+
+  it("documents Sentry as a supplemental, read-only, report-window source", () => {
+    const services = read("docs/services.md");
+    const section = services.slice(services.indexOf("## Sentry")).split(/\n## /)[0];
+    expect(section.startsWith("## Sentry")).toBe(true);
+    expect(section).toContain("`project:read`");
+    expect(section).toContain("`event:read`");
+    expect(section.toLowerCase()).toContain("organization slug");
+    expect(section.toLowerCase()).toContain("admin");
+    expect(section.toLowerCase()).toContain("read-only");
+    expect(section.toLowerCase()).toMatch(/selected (sentry )?projects?/);
+    expect(section.toLowerCase()).toMatch(/report window|reporting window/);
+    expect(section.toLowerCase()).toMatch(/lifetime/);
+    expect(section.toLowerCase()).toMatch(/lower bound|capped|bounded/);
+    expect(section.toLowerCase()).toMatch(/disconnect[^.]*(keep|preserv|retain)/);
+    expect(section.toLowerCase()).toContain("repository");
+    expect(section.toLowerCase()).toContain("reconnect");
+    expect(section).toMatch(/not (supported|a Sentry-only)|does not (support|send|deliver)/i);
+    expect(section.toLowerCase()).toContain("oauth");
+    expect(section.toLowerCase()).toContain("self-hosted");
+    expect(section.toLowerCase()).toContain("alert");
+
+    for (const file of ["README.md", "docs/architecture.md", "docs/configuration.md", "docs/upgrading.md"]) {
+      expect(read(file), file).toContain("Sentry");
+    }
+    expect(read("docs/architecture.md")).toContain("sentry_connections");
+    expect(read("docs/configuration.md")).toMatch(/no (new|Sentry)[^\n]*(variable|environment)/i);
+    expect(read("docs/upgrading.md")).toMatch(/sentry_connections/);
+    expect(read("CHANGELOG.md")).toMatch(/Sentry/);
+    expect(read("docs/troubleshooting.md")).toMatch(/Sentry/);
+  });
 });

@@ -7,6 +7,14 @@ follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- Sentry context: a workspace admin connects a sentry.io organization with a read-only token (`project:read`,
+  `event:read`), projects select Sentry projects, and generated logs include issues with event counts inside the report
+  window as supplemental context to repository activity. Requires `npm run db:migrate` (`sentry_connections` table and
+  `projects.sentry_projects`); no new environment variable. Unreadable stored tokens ask for a reconnect, and scheduled
+  runs that hit a Sentry redirect are skipped and notify the creator.
+- Microsoft Teams delivery channel via channel-specific Workflows webhook URLs, a paid delivery channel under the
+  existing delivery limits. Legacy Office 365 connectors are retired and not supported. No SQL migration or new
+  environment variable.
 - GitLab.com and public HTTPS self-managed GitLab support, including per-workspace OAuth configuration, personal member
   connections, mixed GitHub/GitLab projects and normalized activity generation. Requires `npm run db:migrate`; existing
   untagged project repositories remain GitHub.

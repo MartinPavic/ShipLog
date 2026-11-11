@@ -310,6 +310,17 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect(calls.filter((c) => c.url.includes("api.openai.com"))).toHaveLength(0);
   });
 
+  it("skips and notifies when Sentry redirects the request, without charging usage", async () => {
+    const fx = await setup({ sentry: true });
+    sentry = () => new Response(null, { status: 302, headers: { location: "https://evil.example/" } });
+    expect(await run(fx)).toMatchObject({ skipped: 1, retry: 0, generated: 0 });
+    expect(await runRow(fx)).toMatchObject({ status: "skipped" });
+    expect((await runRow(fx)).error).toContain("Sentry redirected the request");
+    expect(emails()).toHaveLength(1);
+    expect(await usage(fx)).toBe(0);
+    expect(await logsOf(fx)).toHaveLength(0);
+  });
+
   it("retries when Sentry is temporarily unavailable", async () => {
     const fx = await setup({ sentry: true });
     sentry = () => new Response("down", { status: 503 });

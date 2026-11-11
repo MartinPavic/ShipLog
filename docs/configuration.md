@@ -40,6 +40,10 @@ plan lacks. They are read at runtime, so changing one needs a restart, not a reb
 | `SCHEDULING_ENABLED` | No scheduled logs. The cron endpoint reports that it skipped, and `CRON_SECRET` is not required. |
 | `DELIVERY_ENABLED` | Slack, Discord, Microsoft Teams and email channels and "send now" are unavailable. |
 
+Sentry and Microsoft Teams delivery need no new environment variable: Sentry credentials are entered by a workspace
+admin in Settings and Teams webhook URLs per project, both stored encrypted with `ENCRYPTION_KEY`. Teams delivery
+follows `DELIVERY_ENABLED`.
+
 ## Demo mode
 
 `AI_PROVIDER=mock` builds a deterministic placeholder log from the real GitHub or GitLab activity. No AI provider is

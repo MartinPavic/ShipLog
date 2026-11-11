@@ -29,8 +29,12 @@ The three-tier billing update requires setting four Stripe price IDs when billin
 `STRIPE_PRICE_PRO_BYOK_ID`, `STRIPE_PRICE_PRO_MANAGED_ID`, `STRIPE_PRICE_ULTRA_BYOK_ID`, and
 `STRIPE_PRICE_ULTRA_MANAGED_ID`. Legacy single-price mappings no longer grant paid entitlements.
 
+Sentry context adds the `sentry_connections` table and a `projects.sentry_projects` column in
+`drizzle/0011_sentry_connections.sql`; run `npm run db:migrate`. Existing projects get an empty selection and make no
+Sentry requests. No new environment variable is needed.
+
 Microsoft Teams delivery uses Workflows webhook URLs and the existing `delivery_channels.kind` text column, so there is
-no SQL enum migration requirement. Keep `TEAMS_ENABLED` (Clerk Organizations) separate from `DELIVERY_ENABLED`
+no SQL migration or enum change for Teams. Keep `TEAMS_ENABLED` (Clerk Organizations) separate from `DELIVERY_ENABLED`
 (Slack/Discord/Microsoft Teams/email delivery availability) when validating an upgrade.
 
 ## Tips

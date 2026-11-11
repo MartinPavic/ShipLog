@@ -55,7 +55,12 @@ async function fetchProjectPage(organizationSlug: string, token: string, cursor?
 export async function getSentryConnection(ownerId: string) {
   const [row] = await getDb().select().from(sentryConnections).where(eq(sentryConnections.ownerId, ownerId)).limit(1);
   if (!row) return null;
-  const token = decrypt(row.encryptedToken);
+  let token: string;
+  try {
+    token = decrypt(row.encryptedToken);
+  } catch {
+    throw new ApiError(400, "The stored Sentry token could not be read. Reconnect Sentry in Settings.", "SENTRY_AUTH");
+  }
   return { organizationSlug: row.organizationSlug, token, last4: last4(token) };
 }
 

@@ -48,6 +48,8 @@ Managed and own-key usage are counted separately.
 2. resolves AI access (own key, managed key, or mock) and reserves usage;
 3. inserts a `ship_logs` row with status `generating`;
 4. resolves each selected repository's provider and fetches GitHub or GitLab activity with the current user's connection;
+   when the project selects Sentry projects, the workspace's Sentry issues are added to the same snapshot as
+   supplemental context, counting events only inside the report window (`src/lib/sentry.ts`);
 5. streams the model's output to the browser as plain text with an `X-Ship-Log-Id` header;
 6. on completion stores the content and the source snapshot and marks the row `ready`; on failure releases the usage and
    marks it `failed`.
@@ -68,7 +70,8 @@ without an explicit provider continue to use GitHub; GitLab projects may use nes
 | `gitlab_instances` | One workspace-scoped GitLab base URL and encrypted OAuth client secret. |
 | `gitlab_connections` | Per-workspace/member GitLab username and encrypted rotating access/refresh tokens. |
 | `ai_credentials` | Per-workspace AI provider, encrypted key, last four characters and model. |
-| `projects` | Repositories, default template and period, schedule and public-changelog flag. |
+| `sentry_connections` | One workspace Sentry organization slug and encrypted read-only token. |
+| `projects` | Repositories, selected Sentry projects, default template and period, schedule and public-changelog flag. |
 | `custom_templates` | Owner-defined writing instructions, tone and audience. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
 | `ship_log_versions` | Earlier content of a log, written on every edit and regeneration. |

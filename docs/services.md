@@ -91,8 +91,11 @@ Variables: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_BYOK_
 
 ## Microsoft Teams delivery
 
-ShipLog sends Microsoft Teams notifications through channel-scoped Workflows webhook URLs. Configure one workflow per
-channel and paste that trigger URL into the project's Delivery tab.
+ShipLog sends Microsoft Teams notifications through channel-specific Workflows webhook URLs. Teams is a paid delivery
+channel that follows the same delivery limits as Slack, Discord and email, so it is available whenever
+`DELIVERY_ENABLED` is on and the plan includes delivery. Configure one workflow per channel and paste that trigger URL
+into the project's Delivery tab. The URL can carry a secret query string, so it is stored encrypted with
+`ENCRYPTION_KEY` and is never shown again or written to logs.
 
 1. In Microsoft Teams, open the target channel and create a **Workflows** flow from a template that posts to the
    channel When a Teams webhook request is received.
@@ -105,6 +108,35 @@ Legacy Office 365 connector webhooks are retired and are not supported by ShipLo
 
 This delivery integration is separate from Clerk Organizations. `TEAMS_ENABLED` controls ShipLog organization
 workspaces, while `DELIVERY_ENABLED` controls whether Slack/Discord/Microsoft Teams/email delivery is available.
+Teams delivery adds no environment variable and no SQL migration: `delivery_channels.kind` is a plain text column.
+
+## Sentry (optional)
+
+A workspace can add recent Sentry issues as supplemental context for its ship logs. Sentry never replaces the
+repository sources: a log is still built from the project's GitHub or GitLab activity, with Sentry issues added when
+the project has selected Sentry projects. Only sentry.io is supported. Self-hosted Sentry, OAuth, and Sentry alert
+delivery are not supported.
+
+1. In Sentry, create an organization auth token (or an internal integration token) with the read-only scopes
+   `project:read` and `event:read` and nothing else.
+2. A workspace admin opens Settings, enters the Sentry organization slug and the token, and saves. ShipLog verifies both
+   against Sentry before storing anything. The token is encrypted with `ENCRYPTION_KEY`, shared by the whole
+   workspace, and only its last four characters are ever shown. Members can see the connection status; only admins can
+   change or remove it.
+3. In a project's settings, pick the Sentry projects to include (up to 20). Projects without a selection never call
+   Sentry, for manual and scheduled runs alike.
+
+Each report counts events for an issue only inside the report window. The issue's lifetime count is never used. ShipLog
+reads a bounded number of issues and event pages per run (at most 25 issues), so on very busy projects the issue and
+event lists are capped: counts that hit the cap are lower bounds, marked "at least" in the context given to the model,
+which is also told the list is not complete. Selections store only the Sentry project ID, slug and name, and every ID is
+verified against the connected organization when you save the selection. If Sentry later refuses access, the run fails
+with a clear Sentry error instead of silently omitting the source.
+
+Disconnecting Sentry deletes the stored token but keeps each project's selections, so reconnecting restores them.
+Until then, runs for projects with selections fail with a prompt to connect Sentry; scheduled runs are skipped and the
+project creator is notified. If the stored token can no longer be read (for example after changing `ENCRYPTION_KEY`),
+ShipLog asks you to reconnect Sentry. Sentry adds no environment variable.
 
 ## Resend (optional)
 
