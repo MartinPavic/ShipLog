@@ -31,7 +31,7 @@ const MESSAGE = 4;
 
 const connected = { configured: true as const, organizationSlug: "acme", last4: "wxyz" };
 const disconnected = { configured: false as const, organizationSlug: null, last4: null };
-const SECRET = "sntryu_0123456789abcdef0123456789abcdef";
+const SECRET = "sntryu_fake_test_token";
 
 type Props = Record<string, unknown> & { children?: ReactNode };
 

@@ -21,7 +21,7 @@ vi.mock("@/lib/gitlab", async (importOriginal) => ({
 const rand = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const SLACK = "https://hooks.slack.com/services/T0AAAA/B0BBBB/secretslacktoken1234";
 const TEAMS_HOST = "prod-12.westus.logic.azure.com";
-const TEAMS = `https://${TEAMS_HOST}:443/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
+const TEAMS = `https://${TEAMS_HOST}:443/workflows/test-workflow/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
 
 // Wednesday 10:30 UTC; the schedule fires on Wednesdays from 09:00 UTC.
 const WEDNESDAY = new Date("2026-10-14T10:30:00Z");

@@ -144,7 +144,7 @@ describe.skipIf(!process.env.DATABASE_URL)("getSetupStatus (database)", () => {
     const { sentryConnections } = await import("@/db/schema");
     const { encrypt } = await import("./crypto");
     const savedKey = process.env.ENCRYPTION_KEY;
-    const token = "sntryu_0123456789abcdef0123456789abcdef";
+    const token = "sntryu_fake_test_token";
     process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
     try {
       const owner = { ownerId: ownerIds.proByok, userId: userIds.proByok };

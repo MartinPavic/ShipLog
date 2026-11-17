@@ -28,7 +28,7 @@ vi.mock("@/lib/owner", async (importOriginal) => {
 const SLACK = "https://hooks.slack.com/services/T0AAAA/B0BBBB/secretslacktoken1234";
 const DISCORD = "https://discord.com/api/webhooks/123456789/secretdiscordtoken5678";
 const TEAMS_HOST = "prod-12.westus.logic.azure.com";
-const TEAMS = `https://${TEAMS_HOST}:443/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
+const TEAMS = `https://${TEAMS_HOST}:443/workflows/test-workflow/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SECRETTEAMSSIG_abc-123`;
 
 type Call = { url: string; body: unknown };
 let calls: Call[];
@@ -505,7 +505,7 @@ describe.skipIf(!process.env.DATABASE_URL)("delivery channels and send now (data
 
     it("rejects non-allowed Teams URLs without echoing the signature", async () => {
       for (const webhookUrl of [
-        "https://evil.example.com/workflows/0123456789abcdef0123456789abcdef/triggers/manual/paths/invoke?sig=SECRETTEAMSSIG_abc",
+        "https://evil.example.com/workflows/test-workflow/triggers/manual/paths/invoke?sig=SECRETTEAMSSIG_abc",
         TEAMS.replace("https:", "http:"),
         TEAMS.replace(":443", ":8443"),
         TEAMS.replace("https://", "https://user:pw@"),
