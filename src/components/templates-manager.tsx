@@ -182,8 +182,8 @@ export function TemplatesManager({
                   onChange={(e) => setDraft({ ...draft, instructions: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Describe the structure, length and wording you want. Tone and audience below apply whenever this
-                  template is used.
+                  Required, at least 20 characters. Describe the structure, length and wording you want. Tone and
+                  audience below apply whenever this template is used.
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
