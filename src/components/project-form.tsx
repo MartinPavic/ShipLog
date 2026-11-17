@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AUDIENCE_PRESETS, PresetField, TONE_PRESETS } from "@/components/preset-field";
 import {
   Select,
   SelectContent,
@@ -43,9 +42,6 @@ export type ProjectFormValues = {
   description: string;
   repos: { provider?: "github" | "gitlab"; fullName: string; branch?: string }[];
   template: string;
-  tone: string;
-  audience: string;
-  customPrompt: string;
   defaultPeriodDays: number;
   isPublicChangelog: boolean;
   schedule: ScheduleValues;
@@ -56,9 +52,6 @@ const EMPTY: ProjectFormValues = {
   description: "",
   repos: [],
   template: "weekly_update",
-  tone: "",
-  audience: "",
-  customPrompt: "",
   defaultPeriodDays: 7,
   isPublicChangelog: false,
   schedule: DEFAULT_SCHEDULE,
@@ -497,7 +490,7 @@ export function ProjectForm(props: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Template</Label>
+            <Label>Default template</Label>
             <Select
               value={values.template}
               items={templateItems}
@@ -520,37 +513,6 @@ export function ProjectForm(props: Props) {
                 Manage templates
               </Link>
             </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <PresetField
-              id="tone"
-              label="Tone (optional)"
-              help="How the log sounds: its voice and formality. It changes the wording and style, never the facts. Pick a suggestion or describe your own."
-              presets={TONE_PRESETS}
-              value={values.tone}
-              onChange={(v) => set("tone", v)}
-              maxLength={100}
-              placeholder="e.g. upbeat, concise"
-            />
-            <PresetField
-              id="audience"
-              label="Audience (optional)"
-              help="Who will read it. This decides how much technical detail is included and which changes are emphasized. Without one, the log is written in plain language for a general reader."
-              presets={AUDIENCE_PRESETS}
-              value={values.audience}
-              onChange={(v) => set("audience", v)}
-              maxLength={200}
-              placeholder="e.g. non-technical stakeholders"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="customPrompt">Custom instructions (optional)</Label>
-            <Textarea
-              id="customPrompt"
-              maxLength={1000}
-              value={values.customPrompt}
-              onChange={(e) => set("customPrompt", e.target.value)}
-            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="days">Default period (days)</Label>

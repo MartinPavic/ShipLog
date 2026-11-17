@@ -131,7 +131,7 @@ export default function Home() {
                 <h2 className="text-lg font-semibold">{feature.title}</h2>
                 <p className="text-sm text-muted-foreground">
                   {!on.managedAi && feature.title === "AI writes the report"
-                    ? "Choose a template, tone and audience. Use your own OpenAI, Anthropic or Grok key."
+                    ? "Choose a template with its own instructions, tone and audience. Use your own OpenAI, Anthropic or Grok key."
                     : feature.body}
                 </p>
               </div>

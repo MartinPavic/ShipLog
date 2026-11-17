@@ -82,9 +82,6 @@ export async function createProject(owner: Owner, input: CreateProjectInput, max
           description: input.description ?? null,
           repos,
           template: input.template,
-          tone: input.tone ?? null,
-          audience: input.audience ?? null,
-          customPrompt: input.customPrompt ?? null,
           defaultPeriodDays: input.defaultPeriodDays,
           isPublicChangelog: input.isPublicChangelog,
         })

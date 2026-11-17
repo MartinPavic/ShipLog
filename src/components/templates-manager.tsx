@@ -7,13 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AUDIENCE_PRESETS, PresetField, TONE_PRESETS } from "@/components/preset-field";
 import { Textarea } from "@/components/ui/textarea";
 import type { TemplateView } from "@/lib/ai/templates";
 import { apiRequest } from "@/lib/client-api";
 
-type Draft = { id: string | null; name: string; description: string; instructions: string };
+type Draft = {
+  id: string | null;
+  name: string;
+  description: string;
+  instructions: string;
+  tone: string;
+  audience: string;
+};
 
-const EMPTY: Draft = { id: null, name: "", description: "", instructions: "" };
+const EMPTY: Draft = { id: null, name: "", description: "", instructions: "", tone: "", audience: "" };
 const PLACEHOLDER =
   "e.g. Write a short monthly update for our customers. Start with the biggest improvement, then list smaller ones as bullets. Explain each change in plain language and what it means for the reader.";
 
@@ -57,7 +65,13 @@ export function TemplatesManager({
   const save = () =>
     run("save", async () => {
       if (!draft) return;
-      const body = { name: draft.name, description: draft.description, instructions: draft.instructions };
+      const body = {
+        name: draft.name,
+        description: draft.description,
+        instructions: draft.instructions,
+        tone: draft.tone,
+        audience: draft.audience,
+      };
       if (draft.id) {
         const { template } = await apiRequest<{ template: TemplateView }>(`/api/templates/${draft.id}`, "PATCH", body);
         setTemplates((prev) => prev.map((t) => (t.id === template.id ? template : t)));
@@ -108,7 +122,14 @@ export function TemplatesManager({
                   size="sm"
                   variant="outline"
                   disabled={busy === t.id}
-                  onClick={() => open({ id: t.id, name: t.label, description: t.description, instructions: t.instructions })}
+                  onClick={() => open({
+                    id: t.id,
+                    name: t.label,
+                    description: t.description,
+                    instructions: t.instructions,
+                    tone: t.tone ?? "",
+                    audience: t.audience ?? "",
+                  })}
                 >
                   Edit
                 </Button>
@@ -161,10 +182,31 @@ export function TemplatesManager({
                   onChange={(e) => setDraft({ ...draft, instructions: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Describe the structure, length and wording you want. The project&apos;s tone, audience and extra
-                  instructions are added on top, and the AI is always told to write in plain language and never to
-                  invent facts.
+                  Describe the structure, length and wording you want. Tone and audience below apply whenever this
+                  template is used.
                 </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PresetField
+                  id="template-tone"
+                  label="Tone (optional)"
+                  help="Changes wording and style, never the facts."
+                  presets={TONE_PRESETS}
+                  value={draft.tone}
+                  onChange={(tone) => setDraft({ ...draft, tone })}
+                  maxLength={100}
+                  placeholder="e.g. upbeat, concise"
+                />
+                <PresetField
+                  id="template-audience"
+                  label="Audience (optional)"
+                  help="Sets how much technical detail to include."
+                  presets={AUDIENCE_PRESETS}
+                  value={draft.audience}
+                  onChange={(audience) => setDraft({ ...draft, audience })}
+                  maxLength={200}
+                  placeholder="e.g. non-technical stakeholders"
+                />
               </div>
               <div className="flex gap-2">
                 <Button disabled={busy === "save" || !canSave} onClick={save}>
@@ -201,7 +243,7 @@ export function TemplatesManager({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  open({ id: null, name: `${t.label} (copy)`, description: t.description, instructions: t.instructions })
+                  open({ ...EMPTY, name: `${t.label} (copy)`, description: t.description, instructions: t.instructions })
                 }
               >
                 Duplicate

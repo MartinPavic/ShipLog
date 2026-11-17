@@ -68,7 +68,8 @@ without an explicit provider continue to use GitHub; GitLab projects may use nes
 | `gitlab_instances` | One workspace-scoped GitLab base URL and encrypted OAuth client secret. |
 | `gitlab_connections` | Per-workspace/member GitLab username and encrypted rotating access/refresh tokens. |
 | `ai_credentials` | Per-workspace AI provider, encrypted key, last four characters and model. |
-| `projects` | Repositories, template, tone, audience, schedule and public-changelog flag. |
+| `projects` | Repositories, default template and period, schedule and public-changelog flag. |
+| `custom_templates` | Owner-defined writing instructions, tone and audience. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
 | `ship_log_versions` | Earlier content of a log, written on every edit and regeneration. |
 | `delivery_channels`, `deliveries` | Slack, Discord and email channels (encrypted config) and the send history. |

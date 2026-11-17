@@ -7,7 +7,8 @@ Discord or email, manually or on a schedule.
 
 ## Features
 
-- **Projects** group the repositories behind one ship log, with a template, tone, audience and custom instructions.
+- **Projects** group repositories behind one ship log, with a default template, period and public-changelog setting.
+- **Templates** define the writing instructions, tone and audience for generated logs.
 - **GitHub and GitLab** repositories can be mixed in one project; workspace admins configure GitLab OAuth and members connect their own accounts.
 - **Streaming generation** with OpenAI, Anthropic or Grok. Bring your own key, or use managed AI on paid plans.
 - **History** per project: search, date range, pinned logs, edit with version history, regenerate in place.

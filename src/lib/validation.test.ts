@@ -56,6 +56,22 @@ describe("templateInputSchema", () => {
     expect(templateInputSchema.safeParse({ name: "x", instructions: "y".repeat(3001) }).success).toBe(false);
   });
 
+  it("accepts optional template tone and audience without a separate custom prompt", () => {
+    expect(templateInputSchema.parse({
+      name: "Monthly",
+      instructions,
+      tone: "  friendly  ",
+      audience: " customers ",
+      customPrompt: " Mention the roadmap. ",
+    })).toEqual({
+      name: "Monthly",
+      description: "",
+      instructions,
+      tone: "friendly",
+      audience: "customers",
+    });
+  });
+
   it("needs at least one field to update", () => {
     expect(updateTemplateSchema.safeParse({}).success).toBe(false);
     expect(updateTemplateSchema.safeParse({ name: "New name" }).success).toBe(true);
@@ -75,11 +91,11 @@ describe("createProjectSchema", () => {
     });
   });
 
-  it("turns empty optional text into null", () => {
-    const parsed = createProjectSchema.parse({ name: "x", tone: "", audience: "  ", customPrompt: "" });
-    expect(parsed.tone).toBeNull();
-    expect(parsed.audience).toBeNull();
-    expect(parsed.customPrompt).toBeNull();
+  it("does not accept project-level tone, audience or custom instructions", () => {
+    const parsed = createProjectSchema.parse({ name: "x", tone: "friendly", audience: "customers", customPrompt: "extra" });
+    expect(parsed).not.toHaveProperty("tone");
+    expect(parsed).not.toHaveProperty("audience");
+    expect(parsed).not.toHaveProperty("customPrompt");
   });
 
   it("rejects bad names, repos and branches", () => {

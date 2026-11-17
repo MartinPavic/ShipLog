@@ -112,7 +112,14 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       );
     }
 
-    const ctx = { ...project, template: template.id, instructions: template.instructions };
+    const ctx = {
+      name: project.name,
+      description: project.description,
+      template: template.id,
+      instructions: template.instructions,
+      tone: template.tone,
+      audience: template.audience,
+    };
     return {
       input,
       ai,

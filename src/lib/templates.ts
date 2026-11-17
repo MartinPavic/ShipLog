@@ -16,6 +16,8 @@ const toView = (row: Row): TemplateView => ({
   label: row.name,
   description: row.description,
   instructions: row.instructions,
+  tone: row.tone,
+  audience: row.audience,
   builtIn: false,
 });
 

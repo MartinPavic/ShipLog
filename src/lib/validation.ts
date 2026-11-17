@@ -20,6 +20,16 @@ export const uuidSchema = z
 // A built-in template id or the uuid of a custom template; ownership is checked where it is used.
 export const templateIdSchema = z.union([z.enum(TEMPLATE_IDS), uuidSchema]);
 
+// Empty strings clear the field.
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => v || null)
+    .nullable()
+    .optional();
+
 const templateFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
   description: z.string().trim().max(200),
@@ -28,6 +38,8 @@ const templateFields = {
     .trim()
     .min(20, "Describe what the template should write (at least 20 characters)")
     .max(3000),
+  tone: optionalText(100),
+  audience: optionalText(200),
 };
 
 export const templateInputSchema = z.object({ ...templateFields, description: templateFields.description.default("") });
@@ -44,16 +56,6 @@ export const aiSettingsSchema = z.object({
   apiKey: z.string().trim().min(8).max(500).optional(),
   model: z.string().trim().min(1).max(100).optional(),
 });
-
-// Empty strings clear the field.
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .transform((v) => v || null)
-    .nullable()
-    .optional();
 
 const repoSchema = z.object({
   provider: z.enum(["github", "gitlab"]).optional(),
@@ -82,9 +84,6 @@ const projectFields = {
   description: optionalText(500),
   repos: z.array(repoSchema).max(20),
   template: templateIdSchema,
-  tone: optionalText(100),
-  audience: optionalText(200),
-  customPrompt: optionalText(1000),
   defaultPeriodDays: periodDaysSchema,
   isPublicChangelog: z.boolean(),
 };

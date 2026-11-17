@@ -78,6 +78,20 @@
       "when": 1794229649891,
       "tag": "0010_square_fabian_cortez",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794474496373,
+      "tag": "0011_template_prompt_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794498138037,
+      "tag": "0012_remove_template_custom_prompt",
+      "breakpoints": true
     }
   ]
 }
