@@ -17,7 +17,7 @@ export default async function ProjectsPage() {
   const atLimit = projects.length >= limits.maxProjects;
 
   return (
-    <div className="max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="mb-2 text-2xl font-bold">Projects</h1>

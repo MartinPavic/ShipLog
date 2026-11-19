@@ -18,7 +18,7 @@ export default async function NewProjectPage() {
   if (projects.length >= limits.maxProjects) redirect("/dashboard/projects");
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <Link href="/dashboard/projects" className="text-sm text-muted-foreground underline underline-offset-2">
           All projects

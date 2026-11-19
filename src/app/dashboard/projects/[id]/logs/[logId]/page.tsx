@@ -27,7 +27,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
   } catch (err) {
     if (!(err instanceof ApiError)) throw err;
     return (
-      <div className="max-w-3xl space-y-4">
+      <div className="mx-auto max-w-3xl space-y-4">
         <p className="text-sm text-muted-foreground">{err.message}</p>
         <UpgradeButton />
       </div>
@@ -41,7 +41,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
     log.status === "ready" ? await Promise.all([listChannels(project.id), listDeliveries(log.id)]) : [[], []];
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <Link
         href={`/dashboard/projects/${project.id}?tab=history`}
         className="text-sm text-muted-foreground hover:text-foreground"

@@ -21,7 +21,7 @@ export default async function PrintLogPage({ params }: { params: Promise<{ id: s
 
   if (!limits.pdfExport) {
     return (
-      <div className="max-w-3xl space-y-4">
+      <div className="mx-auto max-w-3xl space-y-4">
         <p className="text-sm text-muted-foreground">PDF export is a Pro feature.</p>
         <UpgradeButton />
       </div>

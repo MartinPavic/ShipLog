@@ -7,7 +7,7 @@ export default async function TemplatesPage() {
   const templates = await listTemplates(owner.ownerId);
 
   return (
-    <div className="max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8">
       <div>
         <h1 className="mb-2 text-2xl font-bold">Templates</h1>
         <p className="text-muted-foreground">

@@ -97,7 +97,7 @@ export default async function ProjectPage({
   const sentryConnected = tab === "settings" && (await getSentryStatus(owner.ownerId)).configured;
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{project.name}</h1>
         {project.description && <p className="mt-1 text-muted-foreground">{project.description}</p>}
