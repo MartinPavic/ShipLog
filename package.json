@@ -54,17 +54,22 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "drizzle-kit": "^0.31.11",
+    "drizzle-kit": "^0.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "shadcn": "4.21.0",
+    "shadcn": "^4.23.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.4"
   },
   "allowScripts": {
-    "stripe@22.6.2": true
+    "stripe@22.6.2": true,
+    "esbuild@0.15.18": true,
+    "esbuild@0.28.2": true,
+    "es5-ext@0.10.64": true,
+    "fsevents@2.3.3": true,
+    "unrs-resolver@1.12.2": true
   },
   "engines": {
     "node": ">=22.12"
