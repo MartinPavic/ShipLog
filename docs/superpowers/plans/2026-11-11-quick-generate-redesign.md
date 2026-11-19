@@ -37,25 +37,25 @@
 - Consumes the existing optional `projectField` prop to distinguish dashboard compact rendering from project-page rendering.
 - Produces no new public API; preserves `ProjectGenerate` props and the current `GenerateRequest` payload.
 
-- [ ] **Step 1: Add failing compact-layout regression tests**
+- [x] **Step 1: Add failing compact-layout regression tests**
 
-In `src/components/project-generate.test.tsx`, add tests that render with `projectField` and assert Project precedes Template; Period, its selector, and Days share the compact period group; range mode shows From/To instead of Days; an out-of-range day count disables Generate; and a setup blocker keeps the project picker while hiding generation controls. Retain the project-page presentation test asserting its existing Card and heading.
+In `src/components/project-generate.test.tsx`, add tests that render with `projectField` and assert Project precedes Template; Period, its selector, and Days share the compact period group; range mode shows From/To instead of Days; an out-of-range day count disables Generate; Generate/Cancel stack while running; and a setup blocker keeps the project picker while hiding generation controls. Retain the project-page presentation test asserting its existing Card and heading.
 
-- [ ] **Step 2: Run the focused test and confirm it fails for missing compact layout structure**
+- [x] **Step 2: Run the focused test and confirm it fails for missing compact layout structure**
 
 Run: `npx vitest run src/components/project-generate.test.tsx`
 Expected: new compact-layout assertions fail; existing behavior tests pass.
 
-- [ ] **Step 3: Implement the compact layout in `src/components/project-generate.tsx`**
+- [x] **Step 3: Implement the compact layout in `src/components/project-generate.tsx`**
 
-Add styling and grouping only on the `projectField` path: use the existing dark-theme/card and brass tokens, put Project first, group the Period selector with its active day-count or date-range fields, and align Generate at the end. Use responsive grid classes so fields stack on small viewports. Keep the project-page path and all state, labels, handlers, and validation logic intact.
+Add styling and grouping only on the `projectField` path: use the existing dark-theme/card and brass tokens, put Project first, group the Period selector with its active day-count or date-range fields, and align Generate at the end. Use responsive grid classes so fields and compact Generate/Cancel actions stack on small viewports. Keep the project-page path and all state, labels, handlers, and validation logic intact.
 
-- [ ] **Step 4: Run focused component tests**
+- [x] **Step 4: Run focused component tests**
 
 Run: `npx vitest run src/components/project-generate.test.tsx src/components/quick-generate.test.tsx`
 Expected: all tests pass, including the compact layout and unchanged project selection/default behavior.
 
-- [ ] **Step 5: Run TypeScript validation**
+- [x] **Step 5: Run TypeScript validation**
 
 Run: `npm run typecheck`
 Expected: completes successfully with no type errors.
