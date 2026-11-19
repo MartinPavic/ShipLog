@@ -71,8 +71,7 @@ without an explicit provider continue to use GitHub; GitLab projects may use nes
 | `gitlab_connections` | Per-workspace/member GitLab username and encrypted rotating access/refresh tokens. |
 | `ai_credentials` | Per-workspace AI provider, encrypted key, last four characters and model. |
 | `sentry_connections` | One workspace Sentry organization slug and encrypted read-only token. |
-| `projects` | Repositories, selected Sentry projects, default template and period, schedule and public-changelog flag. |
-| `custom_templates` | Owner-defined writing instructions, tone and audience. |
+| `projects` | Repositories, selected Sentry projects, template, tone, audience, schedule and public-changelog flag. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
 | `ship_log_versions` | Earlier content of a log, written on every edit and regeneration. |
 | `delivery_channels`, `deliveries` | Slack, Discord, Microsoft Teams and email channels (encrypted config) and the send history. |

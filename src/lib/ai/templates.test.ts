@@ -26,15 +26,17 @@ describe("templates", () => {
 describe("buildSystemPrompt", () => {
   const base = { name: "Site", template: "changelog" as const };
 
-  it("composes template instructions, tone and audience", () => {
+  it("composes template, tone, audience and custom prompt", () => {
     const prompt = buildSystemPrompt({
       ...base,
       tone: "upbeat",
       audience: "customers",
+      customPrompt: "Mention the roadmap.",
     });
     expect(prompt).toContain(TEMPLATES.changelog.instructions);
     expect(prompt).toContain("Tone: upbeat.");
     expect(prompt).toContain("Audience: customers.");
+    expect(prompt).toContain("Mention the roadmap.");
     expect(prompt).toContain("untrusted data");
   });
 
@@ -42,6 +44,7 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(base);
     expect(prompt).not.toContain("Tone:");
     expect(prompt).not.toContain("Audience:");
+    expect(prompt).not.toContain("Additional instructions");
   });
 
   it("asks for plain-language, feature-level descriptions instead of commit titles", () => {
@@ -75,15 +78,7 @@ describe("template helpers", () => {
   });
 
   it("labels deleted custom templates generically", () => {
-    const custom = {
-      id: "c1",
-      label: "Monthly",
-      description: "",
-      instructions: "x",
-      tone: null,
-      audience: null,
-      builtIn: false,
-    };
+    const custom = { id: "c1", label: "Monthly", description: "", instructions: "x", builtIn: false };
     expect(templateLabel([...builtInTemplates(), custom], "c1")).toBe("Monthly");
     expect(templateLabel(builtInTemplates(), "c1")).toBe("Custom template");
   });

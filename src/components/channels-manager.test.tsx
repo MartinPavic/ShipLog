@@ -37,10 +37,9 @@ vi.mock("@/components/ui/select", () => ({
   SelectItem: ({ children, value }: { children: ReactNode; value: string }) => <span data-value={value}>{children}</span>,
 }));
 
-// useState order in ChannelsManager: channels, kind, webhookUrl, recipients, adding, busy, note.
+// useState order in ChannelsManager: channels, kind, webhookUrl, recipients, busy, note.
 const KIND = 1;
 const WEBHOOK_URL = 2;
-const ADDING = 4;
 
 const teamsChannel: ChannelView = { id: "c1", kind: "teams", enabled: true, hint: "prod-12.westus.logic.azure.com/…" };
 const props = { projectId: "alpha", initialChannels: [] as ChannelView[], canManage: true, deliveryAllowed: true, emailConfigured: true };
@@ -60,12 +59,10 @@ beforeEach(() => {
 
 describe("ChannelsManager Teams channel", () => {
   it("offers Microsoft Teams as a webhook channel type", () => {
-    state.values[ADDING] = true;
     expect(render()).toContain('<span data-value="teams">Microsoft Teams</span>');
   });
 
   it("shows a Teams-specific URL placeholder and Workflows help, masked like other webhooks", () => {
-    state.values[ADDING] = true;
     state.values[KIND] = "teams";
     const html = render();
     expect(html).toContain('placeholder="https://….logic.azure.com:443/…"');
@@ -82,7 +79,6 @@ describe("ChannelsManager Teams channel", () => {
   });
 
   it("posts the trimmed Teams webhook to the channels API", async () => {
-    state.values[ADDING] = true;
     state.values[KIND] = "teams";
     state.values[WEBHOOK_URL] = "  https://prod-12.westus.logic.azure.com:443/workflows/abc  ";
     render();
@@ -102,7 +98,6 @@ describe("ChannelsManager Teams channel", () => {
   });
 
   it("keeps Teams behind the delivery entitlement and admin checks", () => {
-    state.values[ADDING] = true;
     const locked = render({ deliveryAllowed: false, initialChannels: [teamsChannel] });
     expect(locked).toContain("Delivery to Slack, Discord, Microsoft Teams and email is a Pro feature.");
     expect(locked).toMatch(/<button disabled="">Add channel<\/button>/);

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { templateLabel, type TemplateView } from "@/lib/ai/templates";
-import { formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { listChannels } from "@/lib/delivery";
 import { isEmailConfigured } from "@/lib/email";
 import { listLogs } from "@/lib/logs";
@@ -63,7 +63,7 @@ function LogList({
                 {log.status === "failed" && <Badge variant="destructive">Failed</Badge>}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                {templateLabel(templates, log.template)} · Started {formatDateTime(log.createdAt)} UTC
+                {templateLabel(templates, log.template)} · {formatDate(log.createdAt)}
               </p>
             </CardHeader>
             <CardContent className="pt-0">
@@ -165,6 +165,9 @@ export default async function ProjectPage({
               repos: project.repos,
               sentryProjects: project.sentryProjects,
               template: project.template,
+              tone: project.tone ?? "",
+              audience: project.audience ?? "",
+              customPrompt: project.customPrompt ?? "",
               defaultPeriodDays: project.defaultPeriodDays,
               isPublicChangelog: project.isPublicChangelog,
               schedule: project.schedule ?? DEFAULT_SCHEDULE,

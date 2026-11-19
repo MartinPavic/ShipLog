@@ -7,8 +7,7 @@ Discord, Microsoft Teams or email, manually or on a schedule.
 
 ## Features
 
-- **Projects** group repositories behind one ship log, with a default template, period and public-changelog setting.
-- **Templates** define the writing instructions, tone and audience for generated logs.
+- **Projects** group the repositories behind one ship log, with a template, tone, audience and custom instructions.
 - **GitHub and GitLab** repositories can be mixed in one project; workspace admins configure GitLab OAuth and members connect their own accounts.
 - **Sentry context** (optional): add Sentry issues with events in the report period from selected projects as supplemental context to the repository activity. Connect a read-only token in Settings.
 - **Streaming generation** with OpenAI, Anthropic or Grok. Bring your own key, or use managed AI on paid plans.

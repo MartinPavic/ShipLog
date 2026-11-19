@@ -9,15 +9,7 @@ export const TEMPLATE_IDS = [
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
 // What the UI needs to list and pick templates; `id` is a built-in id or the uuid of a custom template.
-export type TemplateView = {
-  id: string;
-  label: string;
-  description: string;
-  instructions: string;
-  tone: string | null;
-  audience: string | null;
-  builtIn: boolean;
-};
+export type TemplateView = { id: string; label: string; description: string; instructions: string; builtIn: boolean };
 
 export const isBuiltInTemplate = (id: string): id is TemplateId => (TEMPLATE_IDS as readonly string[]).includes(id);
 
@@ -61,7 +53,7 @@ export const TEMPLATES: Record<TemplateId, { label: string; description: string;
 };
 
 export function builtInTemplates(): TemplateView[] {
-  return TEMPLATE_IDS.map((id) => ({ id, ...TEMPLATES[id], tone: null, audience: null, builtIn: true }));
+  return TEMPLATE_IDS.map((id) => ({ id, ...TEMPLATES[id], builtIn: true }));
 }
 
 // Logs keep the id they were generated with, so a deleted custom template still needs a readable name.
@@ -77,6 +69,7 @@ export type PromptContext = {
   instructions?: string;
   tone?: string | null;
   audience?: string | null;
+  customPrompt?: string | null;
 };
 
 export function buildSystemPrompt(ctx: PromptContext, opts: { sentry?: boolean } = {}): string {
@@ -86,6 +79,7 @@ export function buildSystemPrompt(ctx: PromptContext, opts: { sentry?: boolean }
     instructions,
     ctx.tone ? `Tone: ${ctx.tone}.` : null,
     ctx.audience ? `Audience: ${ctx.audience}.` : null,
+    ctx.customPrompt ? `Additional instructions from the project owner:\n${ctx.customPrompt}` : null,
     [
       "Rules:",
       "- Output Markdown only, with no preamble or closing commentary.",

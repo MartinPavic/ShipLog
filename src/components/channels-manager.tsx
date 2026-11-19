@@ -34,7 +34,6 @@ export function ChannelsManager({
   const [kind, setKind] = useState<ChannelView["kind"]>("slack");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [recipients, setRecipients] = useState("");
-  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
 
@@ -62,7 +61,6 @@ export function ChannelsManager({
       setChannels((prev) => [...prev, channel]);
       setWebhookUrl("");
       setRecipients("");
-      setAdding(false);
       return "Channel added";
     });
 
@@ -104,26 +102,12 @@ export function ChannelsManager({
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle>Delivery channels</CardTitle>
-            <CardDescription>Where ship logs can be sent, manually or after each scheduled run.</CardDescription>
-          </div>
-          {canManage && !adding && channels.length > 0 && (
-            <Button onClick={() => setAdding(true)}>Add channel</Button>
-          )}
+        <CardHeader>
+          <CardTitle>Delivery channels</CardTitle>
+          <CardDescription>Where ship logs can be sent, manually or after each scheduled run.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {channels.length === 0 && !adding && (
-            <div className="space-y-3 py-6 text-center">
-              <p className="text-sm text-muted-foreground">No channels yet.</p>
-              {canManage && (
-                <Button size="lg" onClick={() => setAdding(true)}>
-                  Add your first channel
-                </Button>
-              )}
-            </div>
-          )}
+          {channels.length === 0 && <p className="text-sm text-muted-foreground">No channels yet.</p>}
           {channels.map((c) => (
             <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
               <div className="min-w-0 flex-1">
@@ -153,7 +137,6 @@ export function ChannelsManager({
       </Card>
 
       {canManage ? (
-        adding && (
         <Card>
           <CardHeader>
             <CardTitle>Add a channel</CardTitle>
@@ -210,17 +193,11 @@ export function ChannelsManager({
                 </p>
               </div>
             )}
-            <div className="flex gap-2">
-              <Button disabled={busy === "add" || !canAdd || !deliveryAllowed} onClick={add}>
-                {busy === "add" ? "Adding..." : "Add channel"}
-              </Button>
-              <Button variant="ghost" onClick={() => setAdding(false)}>
-                Cancel
-              </Button>
-            </div>
+            <Button disabled={busy === "add" || !canAdd || !deliveryAllowed} onClick={add}>
+              {busy === "add" ? "Adding..." : "Add channel"}
+            </Button>
           </CardContent>
         </Card>
-        )
       ) : (
         <p className="text-sm text-muted-foreground">Only organization admins can change delivery channels.</p>
       )}

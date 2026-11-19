@@ -130,7 +130,6 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       );
     }
 
-    // Sentry only supplements repository activity, so it is fetched after the emptiness check.
     let sentry: SentryActivity | undefined;
     if (selectedSentryProjects.length) {
       const sentryConnection = await getSentryConnection(owner.ownerId);
@@ -143,14 +142,8 @@ async function prepare(input: GenerateInput): Promise<Prepared> {
       sentry = await fetchSentryActivity(sentryConnection, sentryProjects, period.start, period.end);
     }
 
-    const ctx = {
-      name: project.name,
-      description: project.description,
-      template: template.id,
-      instructions: template.instructions,
-      tone: template.tone,
-      audience: template.audience,
-    };
+    const ctx = { ...project, template: template.id, instructions: template.instructions };
+    // Sentry only supplements repository activity, so it is fetched after the emptiness check.
     return {
       input,
       ai,
