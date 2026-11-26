@@ -177,9 +177,11 @@ endpoint hourly yourself:
 curl -H "Authorization: Bearer $CRON_SECRET" https://your-app.example.com/api/cron/scheduled-logs
 ```
 
-A project's schedule becomes due on its chosen weekday from its chosen hour (in its timezone) until local midnight, runs
-once per week, and retries transient failures up to three times. With the daily cron, only projects whose due window
-includes 21:00 UTC fire, so a late chosen hour in a far-east timezone can be missed; on a Vercel Pro plan set the
-schedule back to `0 * * * *` for full hourly accuracy.
+A project can have several schedules, set on its Schedules tab. Each schedule becomes due on its chosen weekdays from its
+chosen hour (in its timezone) until local midnight, runs once per due day, generates with its own template, and sends only
+to its own channels (none selected means the log is only generated). Transient failures retry up to three times. With the
+daily cron, only schedules whose due window includes 21:00 UTC fire, so a late chosen hour in a far-east timezone can be
+missed; on a Vercel Pro plan set the schedule back to `0 * * * *` for full hourly accuracy. Each run uses one generation
+from the workspace's usage, so more schedules use more of the monthly allowance.
 
 Variable: `CRON_SECRET` (16 or more characters).

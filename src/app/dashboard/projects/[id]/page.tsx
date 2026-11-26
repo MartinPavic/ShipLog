@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArchiveProjectButton } from "@/components/archive-project-button";
 import { ChannelsManager } from "@/components/channels-manager";
-import { DEFAULT_SCHEDULE, ProjectForm } from "@/components/project-form";
+import { ProjectForm } from "@/components/project-form";
 import { ProjectGenerate } from "@/components/project-generate";
+import { SchedulesManager } from "@/components/schedules-manager";
 import { UpgradeButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,8 @@ import { listLogs } from "@/lib/logs";
 import { getOwner, isAdmin } from "@/lib/owner";
 import { getOwnerSlug } from "@/lib/owner-profile";
 import { getPlanLimits } from "@/lib/plans";
-import { getProject } from "@/lib/projects";
-import { getLastRun } from "@/lib/scheduler";
+import { getProject, type Project } from "@/lib/projects";
+import { getLastRuns, listSchedules } from "@/lib/schedules";
 import { getSentryStatus } from "@/lib/sentry-settings";
 import { getSetupStatus } from "@/lib/settings";
 import { listTemplates } from "@/lib/templates";
@@ -29,6 +30,7 @@ const TABS = [
   { id: "overview", label: "Overview" },
   { id: "history", label: "History" },
   { id: "delivery", label: "Delivery" },
+  { id: "schedules", label: "Schedules" },
   { id: "settings", label: "Settings" },
 ] as const;
 
@@ -93,7 +95,6 @@ export default async function ProjectPage({
   const { limits } = await getPlanLimits(owner.ownerId);
   const templates = await listTemplates(owner.ownerId);
   const ownerSlug = tab === "settings" && project.isPublicChangelog ? await getOwnerSlug(owner.ownerId) : null;
-  const lastRun = tab === "settings" ? await getLastRun(project.id) : null;
   const sentryConnected = tab === "settings" && (await getSentryStatus(owner.ownerId)).configured;
 
   return (
@@ -145,6 +146,8 @@ export default async function ProjectPage({
         />
       )}
 
+      {tab === "schedules" && <SchedulesTab owner={owner} project={project} templates={templates} limits={limits} />}
+
       {tab === "settings" && (
         <div className="space-y-6">
           {ownerSlug && (
@@ -167,12 +170,8 @@ export default async function ProjectPage({
               template: project.template,
               defaultPeriodDays: project.defaultPeriodDays,
               isPublicChangelog: project.isPublicChangelog,
-              schedule: project.schedule ?? DEFAULT_SCHEDULE,
             }}
-            schedulingAllowed={limits.scheduling}
             sentryConnected={sentryConnected}
-            canTakeOver={isAdmin(owner) && project.createdBy !== owner.userId}
-            lastRun={lastRun ? { slot: lastRun.slot, status: lastRun.status, error: lastRun.error } : null}
           />
           {isAdmin(owner) && (
             <Card>
@@ -187,6 +186,45 @@ export default async function ProjectPage({
         </div>
       )}
     </div>
+  );
+}
+
+async function SchedulesTab({
+  owner,
+  project,
+  templates,
+  limits,
+}: {
+  owner: Awaited<ReturnType<typeof getOwner>>;
+  project: Project;
+  templates: TemplateView[];
+  limits: Awaited<ReturnType<typeof getPlanLimits>>["limits"];
+}) {
+  const [schedules, channels] = await Promise.all([listSchedules(project.id), listChannels(project.id)]);
+  const lastRuns = await getLastRuns(schedules.map((s) => s.id));
+  return (
+    <SchedulesManager
+      projectId={project.id}
+      initialSchedules={schedules.map((s) => ({
+        id: s.id,
+        name: s.name,
+        template: s.template,
+        weekdays: s.weekdays,
+        hour: s.hour,
+        timezone: s.timezone,
+        periodDays: s.periodDays,
+        enabled: s.enabled,
+        createdBy: s.createdBy,
+        channelIds: s.channelIds,
+        lastRun: lastRuns.get(s.id) ?? null,
+      }))}
+      channels={channels.map((c) => ({ id: c.id, kind: c.kind, enabled: c.enabled, hint: c.hint }))}
+      templates={templates}
+      defaultTemplate={project.template}
+      canManage={isAdmin(owner)}
+      schedulingAllowed={limits.scheduling}
+      currentUserId={owner.userId}
+    />
   );
 }
 

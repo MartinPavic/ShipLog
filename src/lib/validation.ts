@@ -129,17 +129,41 @@ export const createProjectSchema = z.object({
 });
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
-export const scheduleSchema = z.object({
-  enabled: z.boolean(),
-  dayOfWeek: z.number().int().min(0).max(6),
+export const updateProjectSchema = z.object(projectFields).partial();
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+
+const scheduleFields = {
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required")
+    .max(60)
+    .regex(/^[^\u0000-\u001f\u007f]+$/, "Name can't contain line breaks or control characters"),
+  template: templateIdSchema,
+  weekdays: z
+    .array(z.number().int().min(0).max(6))
+    .min(1, "Pick at least one weekday")
+    .max(7)
+    .transform((days) => [...new Set(days)].sort((a, b) => a - b)),
   hour: z.number().int().min(0).max(23),
   timezone: z.string().refine(isValidTimezone, "Unknown timezone"),
   periodDays: periodDaysSchema,
-  autoDeliver: z.boolean(),
-});
+  enabled: z.boolean(),
+  channelIds: z.array(uuidSchema).max(10),
+};
 
-export const updateProjectSchema = z.object({ ...projectFields, schedule: scheduleSchema.nullable() }).partial();
-export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+export const scheduleInputSchema = z.object({
+  ...scheduleFields,
+  enabled: scheduleFields.enabled.default(true),
+  channelIds: scheduleFields.channelIds.default([]),
+});
+export type ScheduleInput = z.infer<typeof scheduleInputSchema>;
+
+// Built from the fields without defaults, so an omitted field is left alone rather than reset.
+export const updateScheduleSchema = z
+  .object(scheduleFields)
+  .partial()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to update");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

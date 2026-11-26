@@ -1,6 +1,6 @@
-import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { projects, scheduledRuns, shipLogs } from "@/db/schema";
+import { projectSchedules, projects, scheduledRuns, shipLogs } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import { deliverLog } from "@/lib/delivery";
 import { generateLog } from "@/lib/generation";
@@ -10,6 +10,7 @@ import { isOrgMember } from "@/lib/orgs";
 import { getPlanLimits } from "@/lib/plans";
 import type { Project } from "@/lib/projects";
 import { currentSlot } from "@/lib/schedule";
+import { withChannels, type ProjectSchedule } from "@/lib/schedules";
 import { getLog } from "@/lib/logs";
 
 export const MAX_ATTEMPTS = 3;
@@ -24,16 +25,16 @@ const TRANSIENT = new Set(["AI_UNAVAILABLE", "AI_TIMEOUT", "AI_RATE_LIMIT", "GIT
 
 // Takes the slot atomically: first claim, or a re-claim of a retryable / crashed run. Returns the attempt number.
 export async function claimSlot(
-  projectId: string,
+  scheduleId: string,
   slot: string,
   now = new Date()
 ): Promise<{ attempts: number; logId: string | null } | null> {
   const stale = new Date(now.getTime() - STALE_RUNNING_MS);
   const rows = await getDb()
     .insert(scheduledRuns)
-    .values({ projectId, slot, status: "running" })
+    .values({ scheduleId, slot, status: "running" })
     .onConflictDoUpdate({
-      target: [scheduledRuns.projectId, scheduledRuns.slot],
+      target: [scheduledRuns.scheduleId, scheduledRuns.slot],
       set: { status: "running", attempts: sql`${scheduledRuns.attempts} + 1`, updatedAt: now },
       setWhere: and(
         lt(scheduledRuns.attempts, MAX_ATTEMPTS),
@@ -48,7 +49,7 @@ export async function claimSlot(
 }
 
 async function finishRun(
-  projectId: string,
+  scheduleId: string,
   slot: string,
   status: "done" | "failed" | "skipped" | "retry",
   extra: { logId?: string; error?: string | null } = {}
@@ -56,15 +57,15 @@ async function finishRun(
   await getDb()
     .update(scheduledRuns)
     .set({ status, ...(extra.logId ? { logId: extra.logId } : {}), error: extra.error ?? null, updatedAt: new Date() })
-    .where(and(eq(scheduledRuns.projectId, projectId), eq(scheduledRuns.slot, slot)));
+    .where(and(eq(scheduledRuns.scheduleId, scheduleId), eq(scheduledRuns.slot, slot)));
 }
 
-  async function saveRunLog(projectId: string, slot: string, logId: string): Promise<void> {
-    await getDb()
+async function saveRunLog(scheduleId: string, slot: string, logId: string): Promise<void> {
+  await getDb()
     .update(scheduledRuns)
     .set({ logId, updatedAt: new Date() })
-    .where(and(eq(scheduledRuns.projectId, projectId), eq(scheduledRuns.slot, slot)));
-  }
+    .where(and(eq(scheduledRuns.scheduleId, scheduleId), eq(scheduledRuns.slot, slot)));
+}
 
 export type RunOutcome = "generated" | "skipped" | "failed" | "retry";
 
@@ -79,16 +80,21 @@ async function assertCreatorIsMember(orgId: string, userId: string) {
   if (!member) {
     throw new ApiError(
       400,
-      "The project's creator is no longer a member of this organization. An admin can take over the schedule in the project's settings.",
+      "The schedule's creator is no longer a member of this organization. An admin can take over the schedule in the project's Schedules tab.",
       "CREATOR_LEFT"
     );
   }
 }
 
-async function runProject(project: Project, slot: string, attempt: number, existingLogId: string | null): Promise<RunOutcome> {
-  const schedule = project.schedule!;
+async function runSchedule(
+  schedule: ProjectSchedule,
+  project: Project,
+  slot: string,
+  attempt: number,
+  existingLogId: string | null
+): Promise<RunOutcome> {
   const owner: Owner = {
-    userId: project.createdBy,
+    userId: schedule.createdBy,
     orgId: project.ownerId.startsWith("org_") ? project.ownerId : null,
     ownerId: project.ownerId,
     orgRole: null,
@@ -96,14 +102,14 @@ async function runProject(project: Project, slot: string, attempt: number, exist
 
   const { limits } = await getPlanLimits(project.ownerId);
   if (!limits.scheduling) {
-    await finishRun(project.id, slot, "skipped", { error: "Scheduled logs require the Pro plan." });
+    await finishRun(schedule.id, slot, "skipped", { error: "Scheduled logs require the Pro plan." });
     return "skipped";
   }
 
   try {
     // A removed member's GitHub token must not keep acting on the organization's behalf.
     if (owner.orgId) await assertCreatorIsMember(owner.orgId, owner.userId);
-    const scheduleKey = `${project.id}:${slot}`;
+    const scheduleKey = `${schedule.id}:${slot}`;
     const [savedRunLog] = existingLogId
       ? []
       : await getDb()
@@ -111,71 +117,83 @@ async function runProject(project: Project, slot: string, attempt: number, exist
           .from(shipLogs)
           .where(and(eq(shipLogs.projectId, project.id), eq(shipLogs.scheduleKey, scheduleKey)))
           .limit(1);
-            const savedLogId = existingLogId ?? savedRunLog?.id;
-            const existingLog = savedLogId ? await getLog(project.ownerId, savedLogId) : null;
+    const savedLogId = existingLogId ?? savedRunLog?.id;
+    const existingLog = savedLogId ? await getLog(project.ownerId, savedLogId) : null;
     const log = existingLog?.status === "ready"
       ? existingLog
-      : await generateLog({ owner, project, period: { days: schedule.periodDays }, scheduleKey });
-    await saveRunLog(project.id, slot, log.id);
+      : await generateLog({
+          owner,
+          project,
+          period: { days: schedule.periodDays },
+          template: schedule.template,
+          scheduleKey,
+        });
+    await saveRunLog(schedule.id, slot, log.id);
 
+    // An empty selection means generate only; deliverLog would treat it as "every enabled channel".
     let note: string | null = null;
-    if (schedule.autoDeliver && limits.delivery) {
+    if (schedule.channelIds.length > 0 && limits.delivery) {
       try {
-        const results = await deliverLog(log, project.id, undefined, `${project.id}:${slot}`);
+        const results = await deliverLog(log, project.id, schedule.channelIds, scheduleKey);
         const failed = results.filter((r) => r.status !== "sent").length;
         if (failed) note = `${failed} of ${results.length} deliveries failed.`;
       } catch (err) {
         note = err instanceof ApiError ? err.message : "Delivery failed.";
       }
     }
-    await finishRun(project.id, slot, "done", { logId: log.id, error: note });
+    await finishRun(schedule.id, slot, "done", { logId: log.id, error: note });
     return "generated";
   } catch (err) {
     const code = err instanceof ApiError ? err.code : undefined;
     const message = err instanceof ApiError ? err.message : "Unexpected error while generating.";
-    if (!(err instanceof ApiError)) console.error(`Scheduled run for ${project.id} failed:`, err);
+    if (!(err instanceof ApiError)) console.error(`Scheduled run for schedule ${schedule.id} failed:`, err);
 
     if (code && SKIPPED.has(code)) {
-      await finishRun(project.id, slot, "skipped", { error: message });
-      if (ACTIONABLE.has(code)) await notifyProjectCreator(project.createdBy, project, message);
+      await finishRun(schedule.id, slot, "skipped", { error: message });
+      if (ACTIONABLE.has(code)) await notifyProjectCreator(schedule.createdBy, project, message, schedule.name);
       return "skipped";
     }
     if (code && TRANSIENT.has(code) && attempt < MAX_ATTEMPTS) {
-      await finishRun(project.id, slot, "retry", { error: message });
+      await finishRun(schedule.id, slot, "retry", { error: message });
       return "retry";
     }
-    await finishRun(project.id, slot, "failed", { error: message });
+    await finishRun(schedule.id, slot, "failed", { error: message });
     return "failed";
   }
 }
 
 export type SchedulerSummary = { checked: number; due: number; generated: number; skipped: number; failed: number; retry: number };
 
+// `only` limits the run to these schedule ids.
 export async function runScheduled(
   now = new Date(),
   opts: { deadlineMs?: number; only?: string[] } = {}
 ): Promise<SchedulerSummary> {
   const { deadlineMs = 240_000, only } = opts;
   const started = Date.now();
-  const candidates = await getDb()
-    .select()
-    .from(projects)
+  const rows = await getDb()
+    .select({ schedule: projectSchedules, project: projects })
+    .from(projectSchedules)
+    .innerJoin(projects, eq(projects.id, projectSchedules.projectId))
     .where(
       and(
-        sql`${projects.archivedAt} is null and (${projects.schedule}->>'enabled') = 'true'`,
-        only ? inArray(projects.id, only) : undefined
+        eq(projectSchedules.enabled, true),
+        isNull(projects.archivedAt),
+        only ? inArray(projectSchedules.id, only) : undefined
       )
     );
+  const withLinks = await withChannels(rows.map((r) => r.schedule));
+  const candidates = rows.map((r, i) => ({ schedule: withLinks[i], project: r.project }));
 
   const summary: SchedulerSummary = { checked: candidates.length, due: 0, generated: 0, skipped: 0, failed: 0, retry: 0 };
   const retryBefore = new Date(now.getTime() - STALE_RUNNING_MS);
   const retryRows = candidates.length
     ? await getDb()
-        .select({ projectId: scheduledRuns.projectId, slot: scheduledRuns.slot, logId: scheduledRuns.logId })
+        .select({ scheduleId: scheduledRuns.scheduleId, slot: scheduledRuns.slot, logId: scheduledRuns.logId })
         .from(scheduledRuns)
         .where(
           and(
-            inArray(scheduledRuns.projectId, candidates.map((project) => project.id)),
+            inArray(scheduledRuns.scheduleId, candidates.map((c) => c.schedule.id)),
             lt(scheduledRuns.attempts, MAX_ATTEMPTS),
             or(
               eq(scheduledRuns.status, "retry"),
@@ -186,15 +204,15 @@ export async function runScheduled(
     : [];
   const retries = new Map<string, Map<string, string | null>>();
   for (const row of retryRows) {
-    const slots = retries.get(row.projectId) ?? new Map<string, string | null>();
+    const slots = retries.get(row.scheduleId) ?? new Map<string, string | null>();
     slots.set(row.slot, row.logId);
-    retries.set(row.projectId, slots);
+    retries.set(row.scheduleId, slots);
   }
-  const due = candidates.flatMap((p) => {
-    const slots = new Map(retries.get(p.id) ?? []);
-    const slot = p.schedule ? currentSlot(p.schedule, now) : null;
+  const due = candidates.flatMap(({ schedule, project }) => {
+    const slots = new Map(retries.get(schedule.id) ?? []);
+    const slot = currentSlot(schedule, now);
     if (slot && !slots.has(slot)) slots.set(slot, null);
-    return [...slots].map(([dueSlot, logId]) => ({ project: p, slot: dueSlot, logId }));
+    return [...slots].map(([dueSlot, logId]) => ({ schedule, project, slot: dueSlot, logId }));
   });
   summary.due = due.length;
 
@@ -202,28 +220,18 @@ export async function runScheduled(
   const queue = [...due];
   const worker = async () => {
     while (queue.length && Date.now() - started < deadlineMs) {
-      const { project, slot, logId } = queue.shift()!;
-      const claim = await claimSlot(project.id, slot, now);
+      const { schedule, project, slot, logId } = queue.shift()!;
+      const claim = await claimSlot(schedule.id, slot, now);
       if (claim === null) continue;
       try {
-        summary[await runProject(project, slot, claim.attempts, claim.logId ?? logId)]++;
+        summary[await runSchedule(schedule, project, slot, claim.attempts, claim.logId ?? logId)]++;
       } catch (err) {
-        console.error(`Scheduled run for ${project.id} crashed:`, err);
-        await finishRun(project.id, slot, "failed", { error: "Unexpected error." }).catch(() => undefined);
+        console.error(`Scheduled run for schedule ${schedule.id} crashed:`, err);
+        await finishRun(schedule.id, slot, "failed", { error: "Unexpected error." }).catch(() => undefined);
         summary.failed++;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
   return summary;
-}
-
-export async function getLastRun(projectId: string) {
-  const [row] = await getDb()
-    .select()
-    .from(scheduledRuns)
-    .where(eq(scheduledRuns.projectId, projectId))
-    .orderBy(sql`${scheduledRuns.slot} desc`)
-    .limit(1);
-  return row ?? null;
 }

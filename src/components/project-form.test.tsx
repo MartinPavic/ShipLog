@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClientError } from "@/lib/client-api";
-import { DEFAULT_SCHEDULE, ProjectForm, SentryProjectPicker, projectUpdateBody, type ProjectFormValues } from "./project-form";
+import { ProjectForm, SentryProjectPicker, projectUpdateBody, type ProjectFormValues } from "./project-form";
 
 const state = vi.hoisted(() => ({
   values: [] as unknown[],
@@ -153,7 +153,6 @@ const values: ProjectFormValues = {
   template: "weekly_update",
   defaultPeriodDays: 7,
   isPublicChangelog: false,
-  schedule: DEFAULT_SCHEDULE,
 };
 
 describe("project update payload", () => {
@@ -179,9 +178,6 @@ describe("ProjectForm Sentry section", () => {
         templates={templates as never}
         projectId="p1"
         initial={values}
-        schedulingAllowed
-        lastRun={null}
-        canTakeOver={false}
         sentryConnected={sentryConnected}
       />
     );

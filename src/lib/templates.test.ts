@@ -77,6 +77,27 @@ describe.skipIf(!process.env.DATABASE_URL)("custom templates (database)", () => 
     expect((await getProject(ownerA.ownerId, project.id))?.template).toBe("weekly_update");
   });
 
+  it("resets schedules that used a deleted template to the default one", async () => {
+    const { createProject } = await import("./projects");
+    const { createSchedule, requireSchedule } = await import("./schedules");
+    const { createTemplate, deleteTemplate } = await import("./templates");
+    const { createProjectSchema } = await import("./validation");
+    const keep = await createTemplate(ownerB, { ...input, name: "Kept by B" });
+    const gone = await createTemplate(ownerA, { ...input, name: "Deleted for schedules" });
+    const projectA = await createProject(ownerA, createProjectSchema.parse({ name: "Schedules A" }), 5);
+    const projectB = await createProject(ownerB, createProjectSchema.parse({ name: "Schedules B" }), 5);
+    const fields = { name: "S", weekdays: [1], hour: 9, timezone: "UTC", periodDays: 7, enabled: true, channelIds: [] };
+    const uses = await createSchedule(ownerA, projectA.id, { ...fields, template: gone.id });
+    const other = await createSchedule(ownerA, projectA.id, { ...fields, template: "changelog" });
+    const theirs = await createSchedule(ownerB, projectB.id, { ...fields, template: keep.id });
+
+    await deleteTemplate(ownerA.ownerId, gone.id);
+
+    expect((await requireSchedule(projectA.id, uses.id)).template).toBe("weekly_update");
+    expect((await requireSchedule(projectA.id, other.id)).template).toBe("changelog");
+    expect((await requireSchedule(projectB.id, theirs.id)).template).toBe(keep.id);
+  });
+
   it("caps the number of custom templates per owner", async () => {
     const { MAX_CUSTOM_TEMPLATES, createTemplate, listTemplates } = await import("./templates");
     const have = (await listTemplates(ownerB.ownerId)).filter((t) => !t.builtIn).length;

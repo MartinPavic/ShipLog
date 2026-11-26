@@ -12,18 +12,23 @@ async function getUserEmail(userId: string): Promise<string | null> {
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 // Best effort: a failed notification must never fail the job that triggered it.
-export async function notifyProjectCreator(userId: string, project: { id: string; name: string }, reason: string) {
+export async function notifyProjectCreator(
+  userId: string,
+  project: { id: string; name: string },
+  reason: string,
+  scheduleName: string
+) {
   if (!isEmailConfigured()) return;
   try {
     const to = await getUserEmail(userId);
     if (!to) return;
-    const link = `${appUrl()}/dashboard/projects/${project.id}?tab=settings`;
+    const link = `${appUrl()}/dashboard/projects/${project.id}?tab=schedules`;
     await sendEmail({
       to: [to],
-      subject: `${siteConfig.name}: scheduled log for ${project.name} was skipped`,
-      text: `The scheduled ship log for "${project.name}" was skipped.\n\n${reason}\n\nFix it here: ${link}`,
+      subject: `${siteConfig.name}: scheduled log "${scheduleName}" for ${project.name} was skipped`,
+      text: `The scheduled ship log "${scheduleName}" for "${project.name}" was skipped.\n\n${reason}\n\nFix it here: ${link}`,
       html: emailLayout(
-        `<p>The scheduled ship log for <strong>${escapeHtml(project.name)}</strong> was skipped.</p><p>${escapeHtml(reason)}</p><p><a href="${link}" style="color:#7a5a1a;">Open project settings</a></p>`
+        `<p>The scheduled ship log <strong>${escapeHtml(scheduleName)}</strong> for <strong>${escapeHtml(project.name)}</strong> was skipped.</p><p>${escapeHtml(reason)}</p><p><a href="${link}" style="color:#7a5a1a;">Open the project's schedules</a></p>`
       ),
     });
   } catch (err) {

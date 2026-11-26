@@ -15,7 +15,7 @@ Discord, Microsoft Teams or email, manually or on a schedule.
 - **History** per project: search, date range, pinned logs, edit with version history, regenerate in place.
 - **Sharing**: read-only links (optionally password protected, hidden from search engines) and a public changelog.
 - **Exports**: Markdown, HTML, Slack mrkdwn, `.md` download, and PDF through the browser's print dialog (paid plans).
-- **Delivery and scheduling** (paid plans): Slack, Discord, Microsoft Teams and email channels; a weekly schedule per project.
+- **Delivery and scheduling** (paid plans): Slack, Discord, Microsoft Teams and email channels; several schedules per project, each with its own template and channels.
 - **Teams** (paid plans): Clerk Organizations with admin and member roles. This is workspace membership, not Microsoft Teams delivery. Billing is flat per organization.
 - **Billing**: Stripe subscriptions with a customer portal. Switch it off entirely with `BILLING_ENABLED=false`.
 

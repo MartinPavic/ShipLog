@@ -5,12 +5,14 @@ import {
   generateSchema,
   logListQuerySchema,
   repoNameSchema,
+  scheduleInputSchema,
   sentryProjectsSchema,
   sentrySettingsSchema,
   templateInputSchema,
   updateChannelSchema,
   updateLogSchema,
   updateProjectSchema,
+  updateScheduleSchema,
   updateTemplateSchema,
 } from "./validation";
 
@@ -255,24 +257,49 @@ describe("generateSchema date range", () => {
   });
 });
 
-describe("scheduleSchema", () => {
-  const valid = { enabled: true, dayOfWeek: 1, hour: 9, timezone: "Europe/Zagreb", periodDays: 7, autoDeliver: false };
+describe("scheduleInputSchema", () => {
+  const valid = { name: "Customer update", template: "client_report", weekdays: [5], hour: 9, timezone: "Europe/Zagreb", periodDays: 7 };
+  const channel = "3f1c2a52-0000-4000-8000-000000000000";
 
-  it("accepts a valid schedule on project updates, including clearing it", () => {
-    expect(updateProjectSchema.parse({ schedule: valid }).schedule).toEqual(valid);
-    expect(updateProjectSchema.parse({ schedule: null }).schedule).toBeNull();
+  it("defaults enabled and channelIds", () => {
+    expect(scheduleInputSchema.parse(valid)).toEqual({ ...valid, enabled: true, channelIds: [] });
+  });
+
+  it("sorts and de-duplicates weekdays", () => {
+    expect(scheduleInputSchema.parse({ ...valid, weekdays: [5, 1, 5] }).weekdays).toEqual([1, 5]);
   });
 
   it.each([
-    { dayOfWeek: 7 },
-    { dayOfWeek: -1 },
+    { weekdays: [] },
+    { weekdays: [7] },
+    { weekdays: [-1] },
     { hour: 24 },
     { hour: 1.5 },
     { periodDays: 0 },
     { periodDays: 91 },
     { timezone: "Mars/Base" },
+    { name: "" },
+    { name: "x".repeat(61) },
+    { name: "two\nlines" },
+    { template: "nope" },
+    { channelIds: Array(11).fill(channel) },
+    { channelIds: ["not-a-uuid"] },
   ])("rejects %j", (override) => {
-    expect(updateProjectSchema.safeParse({ schedule: { ...valid, ...override } }).success).toBe(false);
+    expect(scheduleInputSchema.safeParse({ ...valid, ...override }).success).toBe(false);
+  });
+
+  it("updates are partial and never default omitted fields in", () => {
+    expect(updateScheduleSchema.parse({ hour: 10 })).toEqual({ hour: 10 });
+    expect(updateScheduleSchema.safeParse({}).success).toBe(false);
+    expect(updateScheduleSchema.safeParse({ weekdays: [] }).success).toBe(false);
+  });
+});
+
+describe("updateProjectSchema", () => {
+  it("ignores a schedule; schedules have their own routes", () => {
+    const parsed = updateProjectSchema.parse({ name: "x", schedule: { enabled: true } });
+    expect(parsed).toEqual({ name: "x" });
+    expect(parsed).not.toHaveProperty("schedule");
   });
 });
 

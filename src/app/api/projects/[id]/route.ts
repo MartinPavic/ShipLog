@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { handle, parseBody } from "@/lib/api";
 import { getOwner, requireAdmin } from "@/lib/owner";
 import { ensureOwnerSlug } from "@/lib/owner-profile";
-import { requirePlanFeature } from "@/lib/plans";
 import { archiveProject, requireProject, updateProject } from "@/lib/projects";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { canonicalizeSentryProjects } from "@/lib/sentry-settings";
@@ -21,7 +20,6 @@ export const PATCH = handle(async (req: Request, ctx: Ctx) => {
   const { id } = await ctx.params;
   await requireProject(owner.ownerId, id);
   const patch = await parseBody(req, updateProjectSchema);
-  if (patch.schedule?.enabled) await requirePlanFeature(owner.ownerId, "scheduling");
   // An omitted field keeps the stored selection and never contacts Sentry.
   if (patch.sentryProjects && patch.sentryProjects.length > 0) {
     await enforceRateLimit(`sentry-projects:${owner.ownerId}`, 120, 60 * 60 * 1000, "Sentry project requests");

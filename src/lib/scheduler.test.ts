@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ScheduleInput } from "./validation";
 
 try {
   process.loadEnvFile(".env.local");
@@ -27,9 +28,9 @@ const TEAMS = `https://${TEAMS_HOST}:443/workflows/test-workflow/triggers/manual
 const WEDNESDAY = new Date("2026-10-14T10:30:00Z");
 const TUESDAY = new Date("2026-10-13T10:30:00Z");
 const SLOT = "2026-10-14";
-const schedule = { enabled: true, dayOfWeek: 3, hour: 9, timezone: "UTC", periodDays: 7, autoDeliver: true };
+const schedule = { name: "Weekly", template: "weekly_update", enabled: true, weekdays: [3], hour: 9, timezone: "UTC", periodDays: 7 };
 
-type Fx = { ownerId: string; userId: string; projectId: string; aiMode: "byok" | "managed" };
+type Fx = { ownerId: string; userId: string; projectId: string; scheduleId: string; aiMode: "byok" | "managed" };
 let calls: { url: string; body: unknown; auth: string | null }[];
 let activity: unknown[];
 let ai: () => Response;
@@ -99,6 +100,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     ai?: boolean;
     channel?: boolean;
     channelKind?: "slack" | "teams";
+    selectChannel?: boolean;
     schedule?: object;
     sentry?: boolean;
   } = {}): Promise<Fx> {
@@ -121,7 +123,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const { createProjectSchema } = await import("./validation");
     const db = getDb();
 
-    const fx = { ownerId: `test_o_${rand()}`, userId: `test_u_${rand()}`, projectId: "", aiMode };
+    const fx = { ownerId: `test_o_${rand()}`, userId: `test_u_${rand()}`, projectId: "", scheduleId: "", aiMode };
     const owner = { userId: fx.userId, orgId: null, ownerId: fx.ownerId, orgRole: null };
     if (plan !== "free") await db.insert(billingAccounts).values({ ownerId: fx.ownerId, plan, aiMode, status: "active" });
     if (github) await saveGithubConnection(fx.userId, { login: "dev", token: "gh_token", scopes: "repo" });
@@ -154,26 +156,28 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
       await db.insert(sentryConnections).values({ ownerId: fx.ownerId, organizationSlug: "acme", encryptedToken: encrypt(SENTRY_TOKEN) });
     }
     fx.projectId = project.id;
-    const { projects } = await import("@/db/schema");
-    const { eq } = await import("drizzle-orm");
-    await db
-      .update(projects)
-      .set({ schedule: { ...schedule, ...opts.schedule } })
-      .where(eq(projects.id, project.id));
+    let channelIds: string[] = [];
     if (channel) {
-      await db.insert(deliveryChannels).values({
-        projectId: project.id,
-        kind: channelKind,
-        encryptedConfig: encrypt(JSON.stringify({ webhookUrl: channelKind === "teams" ? TEAMS : SLACK })),
-      });
+      const [row] = await db
+        .insert(deliveryChannels)
+        .values({
+          projectId: project.id,
+          kind: channelKind,
+          encryptedConfig: encrypt(JSON.stringify({ webhookUrl: channelKind === "teams" ? TEAMS : SLACK })),
+        })
+        .returning({ id: deliveryChannels.id });
+      if (opts.selectChannel !== false) channelIds = [row.id];
     }
+    const { createSchedule } = await import("./schedules");
+    const created = await createSchedule(owner, project.id, { ...schedule, ...opts.schedule, channelIds } as ScheduleInput);
+    fx.scheduleId = created.id;
     fixtures.push(fx);
     return fx;
   }
 
   async function run(fx: Fx, now = WEDNESDAY) {
     const { runScheduled } = await import("./scheduler");
-    return runScheduled(now, { only: [fx.projectId] });
+    return runScheduled(now, { only: [fx.scheduleId] });
   }
   async function logsOf(fx: Fx) {
     const { getDb } = await import("@/db");
@@ -185,7 +189,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const { getDb } = await import("@/db");
     const { scheduledRuns } = await import("@/db/schema");
     const { and, eq } = await import("drizzle-orm");
-    const [row] = await getDb().select().from(scheduledRuns).where(and(eq(scheduledRuns.projectId, fx.projectId), eq(scheduledRuns.slot, SLOT)));
+    const [row] = await getDb().select().from(scheduledRuns).where(and(eq(scheduledRuns.scheduleId, fx.scheduleId), eq(scheduledRuns.slot, SLOT)));
     return row;
   }
   async function usage(fx: Fx) {
@@ -414,8 +418,8 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect(emails()).toHaveLength(1);
     const mail = emails()[0].body as { to: string[]; subject: string; text: string };
     expect(mail.to).toEqual(["creator@example.com"]);
-    expect(mail.subject).toContain("Scheduled");
-    expect(mail.text).toContain(`/dashboard/projects/${fx.projectId}?tab=settings`);
+    expect(mail.subject).toContain("Weekly");
+    expect(mail.text).toContain(`/dashboard/projects/${fx.projectId}?tab=schedules`);
   });
 
   it("skips and notifies when no AI key is available", async () => {
@@ -512,14 +516,14 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const { scheduledRuns } = await import("@/db/schema");
     const db = getDb();
 
-    await db.insert(scheduledRuns).values({ projectId: fx.projectId, slot: SLOT, status: "running", updatedAt: new Date(WEDNESDAY.getTime() - 5 * 60 * 1000) });
+    await db.insert(scheduledRuns).values({ scheduleId: fx.scheduleId, slot: SLOT, status: "running", updatedAt: new Date(WEDNESDAY.getTime() - 5 * 60 * 1000) });
     expect(await run(fx)).toMatchObject({ due: 1, generated: 0 });
 
     const { eq, and } = await import("drizzle-orm");
     await db
       .update(scheduledRuns)
       .set({ updatedAt: new Date(WEDNESDAY.getTime() - 45 * 60 * 1000) })
-      .where(and(eq(scheduledRuns.projectId, fx.projectId), eq(scheduledRuns.slot, SLOT)));
+      .where(and(eq(scheduledRuns.scheduleId, fx.scheduleId), eq(scheduledRuns.slot, SLOT)));
     expect(await run(fx)).toMatchObject({ generated: 1 });
     expect(await runRow(fx)).toMatchObject({ status: "done", attempts: 2 });
   });
@@ -539,12 +543,12 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
       periodEnd: new Date("2026-10-14"),
       template: "weekly_update",
       status: "ready",
-      scheduleKey: `${fx.projectId}:${SLOT}`,
+      scheduleKey: `${fx.scheduleId}:${SLOT}`,
     }).returning();
     const [channel] = await getDb().select().from(deliveryChannels).where(eq(deliveryChannels.projectId, fx.projectId));
-    const scheduleKey = `${fx.projectId}:${SLOT}`;
+    const scheduleKey = `${fx.scheduleId}:${SLOT}`;
     await getDb().insert(scheduledRuns).values({
-      projectId: fx.projectId,
+      scheduleId: fx.scheduleId,
       slot: SLOT,
       status: "running",
       attempts: 1,
@@ -564,10 +568,11 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     expect((await getDb().select().from(deliveries).where(eq(deliveries.logId, log.id)))[0].status).toBe("unknown");
   });
 
-  it("only delivers when autoDeliver is on, and a failing webhook doesn't fail the run", async () => {
-    const quiet = await setup({ schedule: { autoDeliver: false } });
+  it("only delivers to selected channels, and a failing webhook doesn't fail the run", async () => {
+    const quiet = await setup({ selectChannel: false });
     expect(await run(quiet)).toMatchObject({ generated: 1 });
     expect(calls.filter((c) => c.url.includes("hooks.slack.com"))).toHaveLength(0);
+    expect(await runRow(quiet)).toMatchObject({ status: "done", error: null });
 
     const failing = await setup();
     slack = () => new Response("gone", { status: 404 });
@@ -576,7 +581,7 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
 
     const noChannels = await setup({ channel: false });
     expect(await run(noChannels)).toMatchObject({ generated: 1 });
-    expect((await runRow(noChannels)).error).toContain("No enabled delivery channels");
+    expect((await runRow(noChannels)).error).toBeNull();
   });
 
   it("records sent Teams scheduled deliveries", async () => {
@@ -630,5 +635,116 @@ describe.skipIf(!process.env.DATABASE_URL)("scheduled logs (database)", () => {
     const fx = await setup({ schedule: { timezone: "Asia/Tokyo" } });
     expect(await run(fx, new Date("2026-10-13T23:30:00Z"))).toMatchObject({ due: 0 }); // 08:30 JST
     expect(await run(fx, new Date("2026-10-14T00:30:00Z"))).toMatchObject({ due: 1, generated: 1 });
+  });
+
+  describe("several schedules", () => {
+    const ownerOf = (fx: Fx) => ({ userId: fx.userId, orgId: null, ownerId: fx.ownerId, orgRole: null });
+    async function addSchedule(fx: Fx, over: object = {}, createdBy = fx.userId) {
+      const { createSchedule } = await import("./schedules");
+      return createSchedule(
+        { ...ownerOf(fx), userId: createdBy },
+        fx.projectId,
+        { ...schedule, name: "Second", enabled: true, channelIds: [], ...over } as ScheduleInput
+      );
+    }
+    const runBoth = async (ids: string[]) => (await import("./scheduler")).runScheduled(WEDNESDAY, { only: ids });
+
+    it("runs every due schedule of a project once, each with its own template and log", async () => {
+      const fx = await setup({ channel: false });
+      const second = await addSchedule(fx, { template: "changelog" });
+      expect(await runBoth([fx.scheduleId, second.id])).toMatchObject({ due: 2, generated: 2, failed: 0 });
+
+      const logs = await logsOf(fx);
+      expect(logs.map((l) => l.scheduleKey).sort()).toEqual([`${fx.scheduleId}:${SLOT}`, `${second.id}:${SLOT}`].sort());
+      expect(logs.find((l) => l.scheduleKey === `${fx.scheduleId}:${SLOT}`)!.template).toBe("weekly_update");
+      expect(logs.find((l) => l.scheduleKey === `${second.id}:${SLOT}`)!.template).toBe("changelog");
+
+      expect(await runBoth([fx.scheduleId, second.id])).toMatchObject({ generated: 0 });
+      expect(await logsOf(fx)).toHaveLength(2);
+    });
+
+    it("delivers each schedule only to its own channels", async () => {
+      const fx = await setup(); // the default schedule selects the Slack channel
+      const { getDb } = await import("@/db");
+      const { deliveryChannels } = await import("@/db/schema");
+      const { encrypt } = await import("./crypto");
+      const [teamsChannel] = await getDb()
+        .insert(deliveryChannels)
+        .values({ projectId: fx.projectId, kind: "teams", encryptedConfig: encrypt(JSON.stringify({ webhookUrl: TEAMS })) })
+        .returning();
+      const second = await addSchedule(fx, { channelIds: [teamsChannel.id] });
+
+      expect(await runBoth([fx.scheduleId, second.id])).toMatchObject({ generated: 2 });
+      expect(calls.filter((c) => c.url.includes("hooks.slack.com"))).toHaveLength(1);
+      expect(calls.filter((c) => c.url === TEAMS)).toHaveLength(1);
+
+      const { listDeliveries } = await import("./delivery");
+      const logs = await logsOf(fx);
+      const first = logs.find((l) => l.scheduleKey === `${fx.scheduleId}:${SLOT}`)!;
+      const other = logs.find((l) => l.scheduleKey === `${second.id}:${SLOT}`)!;
+      expect(await listDeliveries(first.id)).toMatchObject([{ kind: "slack", status: "sent" }]);
+      expect(await listDeliveries(other.id)).toMatchObject([{ kind: "teams", status: "sent" }]);
+    });
+
+    it("does not deliver when the schedule has no channels, even if the project has enabled channels", async () => {
+      const fx = await setup({ selectChannel: false });
+      expect(await run(fx)).toMatchObject({ generated: 1 });
+      expect(calls.filter((c) => c.url.includes("hooks.slack.com"))).toHaveLength(0);
+      expect(await runRow(fx)).toMatchObject({ status: "done", error: null });
+    });
+
+    it("records a note, not a failure, when every selected channel is paused", async () => {
+      const fx = await setup();
+      const { getDb } = await import("@/db");
+      const { deliveryChannels } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await getDb().update(deliveryChannels).set({ enabled: false }).where(eq(deliveryChannels.projectId, fx.projectId));
+
+      expect(await run(fx)).toMatchObject({ generated: 1, failed: 0 });
+      expect((await runRow(fx)).error).toContain("No enabled delivery channels");
+      expect(await logsOf(fx)).toHaveLength(1);
+      expect(calls.filter((c) => c.url.includes("hooks.slack.com"))).toHaveLength(0);
+    });
+
+    it("only generates when the schedule's only channel was deleted, without falling back to other channels", async () => {
+      const fx = await setup();
+      const { getDb } = await import("@/db");
+      const { deliveryChannels } = await import("@/db/schema");
+      const { encrypt } = await import("./crypto");
+      const { eq } = await import("drizzle-orm");
+      await getDb().delete(deliveryChannels).where(eq(deliveryChannels.projectId, fx.projectId));
+      await getDb()
+        .insert(deliveryChannels)
+        .values({ projectId: fx.projectId, kind: "teams", encryptedConfig: encrypt(JSON.stringify({ webhookUrl: TEAMS })) });
+
+      expect(await run(fx)).toMatchObject({ generated: 1, failed: 0 });
+      expect(calls.filter((c) => c.url.includes("hooks.slack.com") || c.url === TEAMS)).toHaveLength(0);
+      expect(await runRow(fx)).toMatchObject({ status: "done", error: null });
+    });
+
+    it("ignores schedules of archived projects", async () => {
+      const fx = await setup();
+      const { getDb } = await import("@/db");
+      const { projects } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await getDb().update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+      expect(await run(fx)).toMatchObject({ checked: 0, due: 0 });
+      expect(await logsOf(fx)).toHaveLength(0);
+    });
+
+    it("acts as the schedule's creator", async () => {
+      const fx = await setup();
+      const second = `test_u_${rand()}`;
+      const { saveGithubConnection } = await import("./github");
+      await saveGithubConnection(second, { login: "second", token: "gh_second", scopes: "repo" });
+      fixtures.push({ ...fx, userId: second });
+      const other = await addSchedule(fx, {}, second);
+
+      expect(await runBoth([other.id])).toMatchObject({ generated: 1 });
+      const github = calls.filter((c) => c.url.includes("api.github.com"));
+      expect(github.length).toBeGreaterThan(0);
+      expect(github.every((c) => c.auth === "Bearer gh_second")).toBe(true);
+      expect((await logsOf(fx))[0].createdBy).toBe(second);
+    });
   });
 });

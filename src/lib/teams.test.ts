@@ -252,8 +252,10 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
       const project = await import("@/app/api/projects/[id]/route");
       await denied(project.DELETE(req("DELETE"), ctx(ids.team)));
 
-      const takeOver = await import("@/app/api/projects/[id]/take-over/route");
-      await denied(takeOver.POST(req("POST"), ctx(ids.team)));
+      const takeOver = await import("@/app/api/projects/[id]/schedules/[scheduleId]/take-over/route");
+      await denied(
+        takeOver.POST(req("POST"), { params: Promise.resolve({ id: ids.team, scheduleId: "3f1c2a52-0000-4000-8000-000000000000" }) })
+      );
 
       await denied(
         (await import("@/app/api/stripe/checkout/route")).POST(req("POST", { tier: "pro", aiMode: "byok" }))
@@ -398,23 +400,20 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
   describe("scheduled runs in organizations", () => {
     const NOW = new Date("2026-10-14T10:30:00Z"); // Wednesday
     const SLOT = "2026-10-14";
-    const schedule = { enabled: true, dayOfWeek: 3, hour: 9, timezone: "UTC", periodDays: 7, autoDeliver: false };
+    const schedule = { name: "Weekly", template: "weekly_update", enabled: true, weekdays: [3], hour: 9, timezone: "UTC", periodDays: 7, channelIds: [] as string[] };
     const newAdmin = mk(`test_u_${rand()}`, orgId, "org:admin");
 
-    async function scheduledProject() {
-      const { getDb } = await import("@/db");
-      const { projects } = await import("@/db/schema");
-      const { eq } = await import("drizzle-orm");
-      const project = await newProject(admin, `Scheduled ${rand()}`);
-      await getDb().update(projects).set({ schedule }).where(eq(projects.id, project.id));
-      return project;
+    async function scheduledSchedule(who: Who = admin) {
+      const { createSchedule } = await import("./schedules");
+      const project = await newProject(who, `Scheduled ${rand()}`);
+      return { project, schedule: await createSchedule(who, project.id, schedule) };
     }
-    const run = async (projectId: string) => (await import("./scheduler")).runScheduled(NOW, { only: [projectId] });
-    async function row(projectId: string) {
+    const run = async (scheduleId: string) => (await import("./scheduler")).runScheduled(NOW, { only: [scheduleId] });
+    async function row(scheduleId: string) {
       const { getDb } = await import("@/db");
       const { scheduledRuns } = await import("@/db/schema");
       const { and, eq } = await import("drizzle-orm");
-      const [r] = await getDb().select().from(scheduledRuns).where(and(eq(scheduledRuns.projectId, projectId), eq(scheduledRuns.slot, SLOT)));
+      const [r] = await getDb().select().from(scheduledRuns).where(and(eq(scheduledRuns.scheduleId, scheduleId), eq(scheduledRuns.slot, SLOT)));
       return r;
     }
     const logCount = async (projectId: string) => {
@@ -431,67 +430,66 @@ describe.skipIf(!process.env.DATABASE_URL)("teams (database)", () => {
     });
 
     it("checks that the creator is still a member and uses their token", async () => {
-      const project = await scheduledProject();
-      expect(await run(project.id)).toMatchObject({ generated: 1 });
+      const { project, schedule } = await scheduledSchedule();
+      expect(await run(schedule.id)).toMatchObject({ generated: 1 });
       expect(isOrgMember).toHaveBeenCalledWith(orgId, admin.userId);
       expect(calls.filter((c) => c.url.includes("api.github.com")).every((c) => c.auth === "Bearer gh_admin")).toBe(true);
       expect(await logCount(project.id)).toBe(1);
     });
 
     it("skips quietly when the creator has left, then recovers after an admin takes over", async () => {
-      const project = await scheduledProject();
+      const { project, schedule } = await scheduledSchedule();
       isOrgMember.mockImplementation(async (_org, user) => user !== admin.userId);
 
-      expect(await run(project.id)).toMatchObject({ skipped: 1, generated: 0 });
-      expect(await row(project.id)).toMatchObject({ status: "skipped" });
-      expect((await row(project.id)).error).toContain("no longer a member");
+      expect(await run(schedule.id)).toMatchObject({ skipped: 1, generated: 0 });
+      expect(await row(schedule.id)).toMatchObject({ status: "skipped" });
+      expect((await row(schedule.id)).error).toContain("no longer a member");
       expect(await logCount(project.id)).toBe(0);
       expect(calls.filter((c) => c.url.includes("api.github.com") || c.url.includes("api.openai.com"))).toHaveLength(0);
       expect(calls.filter((c) => c.url.includes("api.resend.com"))).toHaveLength(0); // nobody to tell
 
       // Still skipped on the next tick of the same day.
-      expect(await run(project.id)).toMatchObject({ generated: 0 });
+      expect(await run(schedule.id)).toMatchObject({ generated: 0 });
 
       current = newAdmin;
-      const takeOver = await import("@/app/api/projects/[id]/take-over/route");
-      expect((await takeOver.POST(req("POST"), ctx(project.id))).status).toBe(200);
-      const { getProject } = await import("./projects");
-      expect((await getProject(orgId, project.id))!.createdBy).toBe(newAdmin.userId);
-      expect(await row(project.id)).toMatchObject({ status: "retry", attempts: 0 });
+      const takeOver = await import("@/app/api/projects/[id]/schedules/[scheduleId]/take-over/route");
+      const takeOverCtx = { params: Promise.resolve({ id: project.id, scheduleId: schedule.id }) };
+      expect((await takeOver.POST(req("POST"), takeOverCtx)).status).toBe(200);
+      const { requireSchedule } = await import("./schedules");
+      expect((await requireSchedule(project.id, schedule.id)).createdBy).toBe(newAdmin.userId);
+      expect(await row(schedule.id)).toMatchObject({ status: "retry", attempts: 0 });
 
       calls.length = 0;
-      expect(await run(project.id)).toMatchObject({ generated: 1 });
-      expect(await row(project.id)).toMatchObject({ status: "done" });
+      expect(await run(schedule.id)).toMatchObject({ generated: 1 });
+      expect(await row(schedule.id)).toMatchObject({ status: "done" });
       expect(calls.filter((c) => c.url.includes("api.github.com")).every((c) => c.auth === "Bearer gh_new_admin")).toBe(true);
       expect(await logCount(project.id)).toBe(1);
     });
 
     it("retries when membership can't be verified", async () => {
-      const project = await scheduledProject();
+      const { schedule } = await scheduledSchedule();
       isOrgMember.mockRejectedValueOnce(new Error("clerk down"));
-      expect(await run(project.id)).toMatchObject({ retry: 1, generated: 0 });
-      expect(await row(project.id)).toMatchObject({ status: "retry", attempts: 1 });
+      expect(await run(schedule.id)).toMatchObject({ retry: 1, generated: 0 });
+      expect(await row(schedule.id)).toMatchObject({ status: "retry", attempts: 1 });
 
-      expect(await run(project.id)).toMatchObject({ generated: 1 });
-      expect(await row(project.id)).toMatchObject({ status: "done", attempts: 2 });
+      expect(await run(schedule.id)).toMatchObject({ generated: 1 });
+      expect(await row(schedule.id)).toMatchObject({ status: "done", attempts: 2 });
     });
 
     it("does not consult Clerk for personal projects", async () => {
       const { getDb } = await import("@/db");
-      const { aiCredentials, projects, billingAccounts } = await import("@/db/schema");
+      const { aiCredentials, billingAccounts } = await import("@/db/schema");
       const { encrypt } = await import("./crypto");
       const { saveGithubConnection } = await import("./github");
-      const { eq } = await import("drizzle-orm");
       const solo = mk(`test_u_${rand()}`, null, null);
       allOwners.push(solo.userId);
       const db = getDb();
       await db.insert(billingAccounts).values({ ownerId: solo.ownerId, plan: "pro", aiMode: "byok", status: "active" });
       await db.insert(aiCredentials).values({ ownerId: solo.ownerId, provider: "openai", encryptedKey: encrypt("sk"), last4: "x" });
       await saveGithubConnection(solo.userId, { login: "solo", token: "gh_solo", scopes: "repo" });
-      const project = await newProject(solo, "Solo");
-      await db.update(projects).set({ schedule }).where(eq(projects.id, project.id));
+      const { schedule: soloSchedule } = await scheduledSchedule(solo);
 
-      expect(await run(project.id)).toMatchObject({ generated: 1 });
+      expect(await run(soloSchedule.id)).toMatchObject({ generated: 1 });
       expect(isOrgMember).not.toHaveBeenCalled();
     });
   });

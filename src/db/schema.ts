@@ -19,15 +19,6 @@ export type ProjectRepo = { provider?: RepoProvider; fullName: string; branch?: 
 
 export type SentryProjectRef = { id: string; slug: string; name: string };
 
-export type ProjectSchedule = {
-  enabled: boolean;
-  dayOfWeek: number;
-  hour: number;
-  timezone: string;
-  periodDays: number;
-  autoDeliver: boolean;
-};
-
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
 // ownerId is `orgId ?? userId` everywhere below.
@@ -149,7 +140,6 @@ export const projects = pgTable(
     sentryProjects: jsonb("sentry_projects").$type<SentryProjectRef[]>().notNull().default(sql`'[]'::jsonb`),
     template: text("template").notNull().default("weekly_update"),
     defaultPeriodDays: integer("default_period_days").notNull().default(7),
-    schedule: jsonb("schedule").$type<ProjectSchedule>(),
     isPublicChangelog: boolean("is_public_changelog").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -282,14 +272,49 @@ export const rateLimits = pgTable(
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })]
 );
 
-// One row per project and local schedule date; the row is the claim that makes cron runs idempotent.
-export const scheduledRuns = pgTable(
-  "scheduled_runs",
+// A recurring generation rule: its own template, cadence and delivery channels. weekdays are 0 (Sunday) to 6.
+export const projectSchedules = pgTable(
+  "project_schedules",
   {
+    id: uuid("id").primaryKey().defaultRandom(),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    slot: text("slot").notNull(), // YYYY-MM-DD in the project's timezone
+    name: text("name").notNull(),
+    template: text("template").notNull(),
+    weekdays: integer("weekdays").array().notNull(),
+    hour: integer("hour").notNull(),
+    timezone: text("timezone").notNull(),
+    periodDays: integer("period_days").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("project_schedules_project_idx").on(t.projectId)]
+);
+
+export const scheduleChannels = pgTable(
+  "schedule_channels",
+  {
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => projectSchedules.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => deliveryChannels.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.scheduleId, t.channelId] })]
+);
+
+// One row per schedule and local schedule date; the row is the claim that makes cron runs idempotent.
+export const scheduledRuns = pgTable(
+  "scheduled_runs",
+  {
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => projectSchedules.id, { onDelete: "cascade" }),
+    slot: text("slot").notNull(), // YYYY-MM-DD in the schedule's timezone
     status: text("status", { enum: ["running", "done", "failed", "skipped", "retry"] }).notNull(),
     attempts: integer("attempts").notNull().default(1),
     logId: uuid("log_id").references(() => shipLogs.id, { onDelete: "set null" }),
@@ -297,5 +322,5 @@ export const scheduledRuns = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.projectId, t.slot] })]
+  (t) => [primaryKey({ columns: [t.scheduleId, t.slot] })]
 );

@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/client-api";
 export type ChannelView = { id: string; kind: "slack" | "discord" | "teams" | "email"; enabled: boolean; hint: string };
 
 const KIND_ITEMS = { slack: "Slack", discord: "Discord", teams: "Microsoft Teams", email: "Email" };
-const KIND_LABEL: Record<ChannelView["kind"], string> = KIND_ITEMS;
+export const KIND_LABEL: Record<ChannelView["kind"], string> = KIND_ITEMS;
 
 export function ChannelsManager({
   projectId,

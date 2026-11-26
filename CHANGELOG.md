@@ -7,6 +7,12 @@ follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- Multiple schedules per project, managed on a new Schedules tab. Each schedule has its own template (and so its own
+  tone and audience), weekdays, hour, timezone, period and delivery channels, and runs with the connections of whoever
+  created it. A schedule with no channels only generates logs. Requires `npm run db:migrate` (migration `0014` adds
+  `project_schedules` and `schedule_channels`, recreates `scheduled_runs`, and drops `projects.schedule`; existing run
+  history is discarded). The project-level schedule settings and `POST /api/projects/[id]/take-over` are replaced by
+  `/api/projects/[id]/schedules`, including a per-schedule take-over.
 - Sentry context: a workspace admin connects a sentry.io organization with a read-only token (`project:read`,
   `event:read`), projects select Sentry projects, and generated logs include issues with event counts inside the report
   window as supplemental context to repository activity. Requires `npm run db:migrate` (`sentry_connections` table and

@@ -56,7 +56,8 @@ Managed and own-key usage are counted separately.
 
 Errors before the first byte are ordinary JSON errors. A failure after streaming has started appends a marker followed
 by the message (see `src/lib/constants.ts`); the browser reader in `src/lib/client-generate.ts` hides it from the text.
-Scheduled runs use the same pipeline without streaming, with the project creator's provider connections. Repositories
+Scheduled runs use the same pipeline without streaming, with the provider connections of the person who created the
+schedule. Repositories
 without an explicit provider continue to use GitHub; GitLab projects may use nested namespace paths.
 
 ## Data model
@@ -71,14 +72,15 @@ without an explicit provider continue to use GitHub; GitLab projects may use nes
 | `gitlab_connections` | Per-workspace/member GitLab username and encrypted rotating access/refresh tokens. |
 | `ai_credentials` | Per-workspace AI provider, encrypted key, last four characters and model. |
 | `sentry_connections` | One workspace Sentry organization slug and encrypted read-only token. |
-| `projects` | Repositories, selected Sentry projects, default template and period, schedule and public-changelog flag. |
+| `projects` | Repositories, selected Sentry projects, default template and period, and public-changelog flag. |
+| `project_schedules`, `schedule_channels` | A project's schedules (template, weekdays, hour, timezone, period, creator, on/off) and the delivery channels each one sends to. |
 | `custom_templates` | Owner-defined writing instructions, tone and audience. |
 | `ship_logs` | Generated logs: Markdown content, period, status, source snapshot, share token and password hash. |
 | `ship_log_versions` | Earlier content of a log, written on every edit and regeneration. |
 | `delivery_channels`, `deliveries` | Slack, Discord, Microsoft Teams and email channels (encrypted config) and the send history. |
 | `owner_profiles` | The slug used in public changelog URLs. |
 | `rate_limits` | Fixed-window counters for the abuse limits. |
-| `scheduled_runs` | One row per project and schedule slot, so a slot never runs twice. |
+| `scheduled_runs` | One row per schedule and schedule slot, so a slot never runs twice. |
 
 ## Security model
 

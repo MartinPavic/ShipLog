@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { currentSlot, isValidTimezone } from "./schedule";
 
-const base = { enabled: true, dayOfWeek: 3, hour: 9, timezone: "UTC" }; // Wednesday 09:00
+const base = { enabled: true, weekdays: [3], hour: 9, timezone: "UTC" }; // Wednesday 09:00
 
 describe("currentSlot", () => {
   it("is due from the chosen hour until the end of the local day", () => {
@@ -14,6 +14,17 @@ describe("currentSlot", () => {
   it("is not due on other weekdays", () => {
     expect(currentSlot(base, new Date("2026-10-13T12:00:00Z"))).toBeNull(); // Tuesday
     expect(currentSlot(base, new Date("2026-10-21T12:00:00Z"))).toBe("2026-10-21"); // next Wednesday
+  });
+
+  it("is due on any listed weekday", () => {
+    const monWed = { ...base, weekdays: [1, 3] };
+    expect(currentSlot(monWed, new Date("2026-10-12T12:00:00Z"))).toBe("2026-10-12"); // Monday
+    expect(currentSlot(monWed, new Date("2026-10-13T12:00:00Z"))).toBeNull(); // Tuesday
+    expect(currentSlot(monWed, new Date("2026-10-14T12:00:00Z"))).toBe("2026-10-14"); // Wednesday
+  });
+
+  it("is never due with no weekdays", () => {
+    expect(currentSlot({ ...base, weekdays: [] }, new Date("2026-10-14T12:00:00Z"))).toBeNull();
   });
 
   it("uses the project's timezone for both weekday and hour", () => {
@@ -30,7 +41,7 @@ describe("currentSlot", () => {
   });
 
   it("gives one slot for the repeated hour when clocks go back", () => {
-    const sunday = { enabled: true, dayOfWeek: 0, hour: 1, timezone: "America/New_York" };
+    const sunday = { enabled: true, weekdays: [0], hour: 1, timezone: "America/New_York" };
     const first = currentSlot(sunday, new Date("2026-11-01T05:30:00Z")); // 01:30 EDT
     const second = currentSlot(sunday, new Date("2026-11-01T06:30:00Z")); // 01:30 EST
     expect(first).toBe("2026-11-01");

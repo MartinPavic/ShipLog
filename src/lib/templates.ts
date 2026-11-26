@@ -1,6 +1,6 @@
 import { and, asc, count, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { customTemplates, projects } from "@/db/schema";
+import { customTemplates, projectSchedules, projects } from "@/db/schema";
 import { builtInTemplates, isBuiltInTemplate, type TemplateView } from "@/lib/ai/templates";
 import { ApiError } from "@/lib/api";
 import type { Owner } from "@/lib/owner";
@@ -74,7 +74,7 @@ export async function updateTemplate(ownerId: string, id: string, patch: Partial
   return toView(row);
 }
 
-// Projects that used the template fall back to the default one; old logs keep their text.
+// Projects and schedules that used the template fall back to the default one; old logs keep their text.
 export async function deleteTemplate(ownerId: string, id: string): Promise<void> {
   if (!uuidSchema.safeParse(id).success) throw new ApiError(404, "Template not found", "NOT_FOUND");
   await getDb().transaction(async (tx) => {
@@ -87,5 +87,14 @@ export async function deleteTemplate(ownerId: string, id: string): Promise<void>
       .update(projects)
       .set({ template: FALLBACK_TEMPLATE, updatedAt: new Date() })
       .where(and(eq(projects.ownerId, ownerId), eq(projects.template, id)));
+    await tx
+      .update(projectSchedules)
+      .set({ template: FALLBACK_TEMPLATE, updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectSchedules.template, id),
+          sql`${projectSchedules.projectId} in (select id from ${projects} where ${projects.ownerId} = ${ownerId})`
+        )
+      );
   });
 }

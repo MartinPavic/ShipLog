@@ -36,7 +36,7 @@ AI configuration or change the subscription to BYOK through billing management. 
 Create a personal token with `project:read` and `event:read` (or use an internal integration with equivalent read
 permissions), check the organization slug, and reconnect Sentry in Settings. This is also needed after changing
 `ENCRYPTION_KEY`. A "redirected the request" error means the organization slug or token does not point at sentry.io;
-fix it and reconnect. Scheduled runs hitting these errors are skipped and the project creator is notified.
+fix it and reconnect. Scheduled runs hitting these errors are skipped and the schedule's creator is notified.
 
 **Microsoft Teams says the webhook was refused (401/403).**
 Edit the workflow trigger and set authentication to **Anyone**, then confirm the webhook URL in ShipLog still matches
@@ -65,9 +65,9 @@ The subscription item price does not match one of the four configured price IDs.
 ignored by entitlement logic in the three-tier setup.
 
 **Scheduled logs never run.**
-Check that `CRON_SECRET` is set, that something calls the cron endpoint hourly, and that the project's schedule is
-enabled. The project's Settings tab shows the last run and why it was skipped. The project creator's GitHub or GitLab
-connection is used; in an organization an admin can take the schedule over from the project's settings.
+Check that `CRON_SECRET` is set, that something calls the cron endpoint hourly, and that the schedule is enabled. The
+project's Schedules tab shows each schedule's last run and why it was skipped. A schedule runs with the GitHub or GitLab
+connection of the person who created it; in an organization an admin can use "Run as me" on the schedule to take it over.
 
 **`/api/health` reports `"schemaReady": false`.**
 The migrations have not been applied to that database. Run `npm run db:migrate` with `DATABASE_URL_UNPOOLED` set.

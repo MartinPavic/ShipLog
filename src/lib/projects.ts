@@ -1,6 +1,6 @@
-import { and, asc, count, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { projects, scheduledRuns, shipLogs, type ProjectRepo } from "@/db/schema";
+import { projects, shipLogs, type ProjectRepo } from "@/db/schema";
 import { ApiError } from "@/lib/api";
 import type { Owner } from "@/lib/owner";
 import { slugify } from "@/lib/slug";
@@ -134,28 +134,4 @@ export async function archiveProject(ownerId: string, id: string): Promise<void>
     .where(and(eq(projects.id, id), active(ownerId)))
     .returning({ id: projects.id });
   if (rows.length === 0) throw new ApiError(404, "Project not found", "NOT_FOUND");
-}
-
-// Scheduled runs use the creator's provider connections, so handing a project over means changing the creator.
-export async function takeOverProject(ownerId: string, id: string, userId: string): Promise<Project> {
-  const db = getDb();
-  const [row] = await db
-    .update(projects)
-    .set({ createdBy: userId, updatedAt: new Date() })
-    .where(and(eq(projects.id, id), active(ownerId)))
-    .returning();
-  if (!row) throw new ApiError(404, "Project not found", "NOT_FOUND");
-
-  // The newest run may have been skipped because of the previous creator; let it run again on the next tick.
-  await db
-    .update(scheduledRuns)
-    .set({ status: "retry", attempts: 0, error: null, updatedAt: new Date() })
-    .where(
-      and(
-        eq(scheduledRuns.projectId, id),
-        inArray(scheduledRuns.status, ["skipped", "failed"]),
-        sql`${scheduledRuns.slot} = (select max(slot) from scheduled_runs where project_id = ${id})`
-      )
-    );
-  return row;
 }

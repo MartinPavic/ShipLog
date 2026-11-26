@@ -9,7 +9,7 @@ export function isValidTimezone(timezone: string): boolean {
   }
 }
 
-type Schedule = { enabled: boolean; dayOfWeek: number; hour: number; timezone: string };
+type Schedule = { enabled: boolean; weekdays: number[]; hour: number; timezone: string };
 
 // The slot is the project's local date. It is due on the chosen weekday from the chosen hour until midnight,
 // so a late or missed cron tick still runs the same day, and the date doubles as the idempotency key.
@@ -27,6 +27,6 @@ export function currentSlot(schedule: Schedule, now: Date): string | null {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
 
   const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday"));
-  if (weekday !== schedule.dayOfWeek || Number(get("hour")) < schedule.hour) return null;
+  if (!schedule.weekdays.includes(weekday) || Number(get("hour")) < schedule.hour) return null;
   return `${get("year")}-${get("month")}-${get("day")}`;
 }

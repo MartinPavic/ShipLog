@@ -18,25 +18,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type { SentryProjectRef } from "@/db/schema";
 import { type TemplateView } from "@/lib/ai/templates";
 import { ApiClientError, apiRequest } from "@/lib/client-api";
-import { WEEKDAYS } from "@/lib/schedule";
-
-export type ScheduleValues = {
-  enabled: boolean;
-  dayOfWeek: number;
-  hour: number;
-  timezone: string;
-  periodDays: number;
-  autoDeliver: boolean;
-};
-
-export const DEFAULT_SCHEDULE: ScheduleValues = {
-  enabled: false,
-  dayOfWeek: 1,
-  hour: 9,
-  timezone: "UTC",
-  periodDays: 7,
-  autoDeliver: false,
-};
 
 export type ProjectFormValues = {
   name: string;
@@ -46,7 +27,6 @@ export type ProjectFormValues = {
   template: string;
   defaultPeriodDays: number;
   isPublicChangelog: boolean;
-  schedule: ScheduleValues;
 };
 
 const EMPTY: ProjectFormValues = {
@@ -57,7 +37,6 @@ const EMPTY: ProjectFormValues = {
   template: "weekly_update",
   defaultPeriodDays: 7,
   isPublicChangelog: false,
-  schedule: DEFAULT_SCHEDULE,
 };
 
 type RepoSummary = { fullName: string; private: boolean; description: string | null };
@@ -360,199 +339,12 @@ export function projectUpdateBody(
   return rest;
 }
 
-const WEEKDAY_ITEMS = Object.fromEntries(WEEKDAYS.map((d, i) => [String(i), d]));
-const HOURS = Array.from({ length: 24 }, (_, h) => h);
-const HOUR_ITEMS = Object.fromEntries(HOURS.map((h) => [String(h), `${String(h).padStart(2, "0")}:00`]));
-
-function timezones(): string[] {
-  try {
-    return Intl.supportedValuesOf("timeZone");
-  } catch {
-    return [];
-  }
-}
-
-type LastRun = { slot: string; status: string; error: string | null } | null;
-
-function ScheduleCard({
-  value,
-  onChange,
-  allowed,
-  lastRun,
-  takeOver,
-}: {
-  value: ScheduleValues;
-  onChange: (value: ScheduleValues) => void;
-  allowed: boolean;
-  lastRun: LastRun;
-  takeOver: { projectId: string } | null;
-}) {
-  const router = useRouter();
-  const [taking, setTaking] = useState(false);
-  const [takeError, setTakeError] = useState("");
-  const set = <K extends keyof ScheduleValues>(key: K, v: ScheduleValues[K]) => onChange({ ...value, [key]: v });
-  const locked = !allowed && !value.enabled;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Schedule</CardTitle>
-        <CardDescription>
-          Generate a ship log automatically every week, using the connections of whoever created the project.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {locked && <p className="text-sm text-muted-foreground">Scheduled logs are a Pro feature.</p>}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={value.enabled}
-            disabled={locked}
-            onChange={(e) => set("enabled", e.target.checked)}
-          />
-          Generate automatically
-        </label>
-
-        {value.enabled && (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Day</Label>
-                <Select
-                  value={String(value.dayOfWeek)}
-                  items={WEEKDAY_ITEMS}
-                  onValueChange={(v) => v && set("dayOfWeek", Number(v))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {WEEKDAYS.map((d, i) => (
-                      <SelectItem key={d} value={String(i)}>
-                        {d}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>From</Label>
-                <Select
-                  value={String(value.hour)}
-                  items={HOUR_ITEMS}
-                  onValueChange={(v) => v && set("hour", Number(v))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HOURS.map((h) => (
-                      <SelectItem key={h} value={String(h)}>
-                        {HOUR_ITEMS[String(h)]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-timezone">Timezone</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="schedule-timezone"
-                  list="schedule-timezones"
-                  value={value.timezone}
-                  onChange={(e) => set("timezone", e.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => set("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone)}
-                >
-                  Use mine
-                </Button>
-              </div>
-              <datalist id="schedule-timezones">
-                {timezones().map((tz) => (
-                  <option key={tz} value={tz} />
-                ))}
-              </datalist>
-              <p className="text-xs text-muted-foreground">
-                Runs at the first opportunity from the chosen hour (checked hourly), once per week.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-days">Period (days)</Label>
-              <Input
-                id="schedule-days"
-                type="number"
-                min={1}
-                max={90}
-                className="w-32"
-                value={value.periodDays}
-                onChange={(e) => set("periodDays", Number(e.target.value))}
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={value.autoDeliver}
-                onChange={(e) => set("autoDeliver", e.target.checked)}
-              />
-              Send to the project&apos;s delivery channels
-            </label>
-          </>
-        )}
-
-        {lastRun && (
-          <p className="text-sm text-muted-foreground">
-            Last scheduled run ({lastRun.slot}): <strong>{lastRun.status}</strong>
-            {lastRun.error ? ` — ${lastRun.error}` : ""}
-          </p>
-        )}
-
-        {takeOver && (
-          <div className="space-y-2 border-t pt-4">
-            <p className="text-sm text-muted-foreground">
-              Scheduled runs use the GitHub connection of the person who created this project.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={taking}
-              onClick={async () => {
-                setTaking(true);
-                setTakeError("");
-                try {
-                  await apiRequest(`/api/projects/${takeOver.projectId}/take-over`, "POST");
-                  router.refresh();
-                } catch (err) {
-                  setTakeError(err instanceof Error ? err.message : "Something went wrong");
-                } finally {
-                  setTaking(false);
-                }
-              }}
-            >
-              Run scheduled logs as me
-            </Button>
-            {takeError && <p className="text-sm text-danger">{takeError}</p>}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 type Props = (
   | { mode: "create" }
   | {
       mode: "edit";
       projectId: string;
       initial: ProjectFormValues;
-      schedulingAllowed: boolean;
-      lastRun: LastRun;
-      canTakeOver: boolean;
     }
 ) & { templates: TemplateView[]; sentryConnected: boolean };
 
@@ -571,9 +363,7 @@ export function ProjectForm(props: Props) {
     setMessage(null);
     try {
       if (props.mode === "create") {
-        const { schedule: _schedule, ...createValues } = values;
-        void _schedule;
-        const { project } = await apiRequest<{ project: { id: string } }>("/api/projects", "POST", createValues);
+        const { project } = await apiRequest<{ project: { id: string } }>("/api/projects", "POST", values);
         router.push(`/dashboard/projects/${project.id}`);
         return;
       }
@@ -685,16 +475,6 @@ export function ProjectForm(props: Props) {
           </label>
         </CardContent>
       </Card>
-
-      {props.mode === "edit" && (
-        <ScheduleCard
-          value={values.schedule}
-          onChange={(schedule) => set("schedule", schedule)}
-          allowed={props.schedulingAllowed}
-          lastRun={props.lastRun}
-          takeOver={props.canTakeOver ? { projectId: props.projectId } : null}
-        />
-      )}
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={loading || !values.name.trim()}>

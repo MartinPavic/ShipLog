@@ -33,6 +33,11 @@ Sentry context adds the `sentry_connections` table and a `projects.sentry_projec
 `drizzle/0011_sentry_connections.sql`; run `npm run db:migrate`. Existing projects get an empty selection and make no
 Sentry requests. No new environment variable is needed.
 
+Multiple schedules per project replace the single project schedule (`drizzle/0014_multiple_schedules.sql`). The migration
+drops `projects.schedule` and recreates `scheduled_runs` without copying anything, so a schedule configured before the
+upgrade is lost: note it down first and recreate it on the project's Schedules tab (choose its template and channels
+there). Run `npm run db:migrate` on each database.
+
 Microsoft Teams delivery uses Workflows webhook URLs and the existing `delivery_channels.kind` text column, so there is
 no SQL migration or enum change for Teams. Keep `TEAMS_ENABLED` (Clerk Organizations) separate from `DELIVERY_ENABLED`
 (Slack/Discord/Microsoft Teams/email delivery availability) when validating an upgrade.
