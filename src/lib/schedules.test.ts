@@ -82,9 +82,13 @@ describe.skipIf(!process.env.DATABASE_URL)("schedules store (database)", () => {
     const { createSchedule, deleteSchedule, updateSchedule } = await import("./schedules");
     const c = await channel(project.id);
     const s = await createSchedule(owner, project.id, input());
-    const racing = updateSchedule(owner, project.id, s.id, { channelIds: [c.id] });
+    // Settle immediately: an early 404 would otherwise be reported as an unhandled rejection while the delete runs.
+    const racing = updateSchedule(owner, project.id, s.id, { channelIds: [c.id] }).then(
+      () => "ok",
+      (e: { status?: number }) => e.status
+    );
     await deleteSchedule(project.id, s.id).catch(() => undefined);
-    await expect(racing.then(() => "ok", (e) => e.status)).resolves.toSatisfy((v: unknown) => v === "ok" || v === 404);
+    expect([await racing]).toSatisfy(([v]: unknown[]) => v === "ok" || v === 404);
   });
 
   it("rejects an unknown custom template", async () => {
